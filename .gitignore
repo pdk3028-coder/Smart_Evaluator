@@ -1,0 +1,12 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.db
+backend/temp/
+
+# Node/React
+node_modules/
+dist/
+.DS_Store
+.env
