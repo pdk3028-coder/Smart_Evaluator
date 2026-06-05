@@ -1,4 +1,7 @@
 import React, { useState, useEffect } from 'react';
+import { jsPDF } from 'jspdf';
+import html2canvas from 'html2canvas';
+import { PDFDocument } from 'pdf-lib';
 
 function AdminDashboard({ onLogout }) {
   const [employees, setEmployees] = useState([]);
@@ -71,6 +74,8 @@ function AdminDashboard({ onLogout }) {
   const [assignmentError, setAssignmentError] = useState('');
   const [assignmentSuccess, setAssignmentSuccess] = useState('');
   const [loading, setLoading] = useState(true);
+  const [pdfLoading, setPdfLoading] = useState(false);
+  const [pdfLoadingMsg, setPdfLoadingMsg] = useState('');
 
   // 평가 기간 상태 (기본값: 시작일은 오늘, 종료일은 일주일 뒤)
   const getTodayStr = () => {
@@ -348,334 +353,388 @@ function AdminDashboard({ onLogout }) {
     }
   };
 
-  // 개별 평가지 인쇄 / PDF 저장 처리 (계약서/확인서 템플릿 적용)
-  const handlePrintEvaluation = async (assignmentId) => {
-    try {
-      const response = await fetch(`/api/admin/evaluations/${assignmentId}`);
-      if (!response.ok) {
-        throw new Error('평가 상세 정보를 가져오는데 실패했습니다.');
-      }
-      const data = await response.json();
-      
-      // 제출 일시 포맷팅
-      const formatDateStr = (dateStr) => {
-        if (!dateStr) return '';
-        try {
-          const date = new Date(dateStr);
-          const year = date.getFullYear();
-          const month = String(date.getMonth() + 1).padStart(2, '0');
-          const day = String(date.getDate()).padStart(2, '0');
-          return `${year}년 ${month}월 ${day}일`;
-        } catch (e) {
-          return dateStr;
-        }
-      };
-
-      const formattedDate = formatDateStr(data.submitted_at);
-
-      // 인쇄용 새 창 열기
-      const printWindow = window.open('', '_blank', 'width=820,height=900,scrollbars=yes');
-      if (!printWindow) {
-        alert('팝업 차단이 활성화되어 있습니다. 팝업 차단을 해제해 주세요.');
-        return;
-      }
-
-      const objectiveQuestions = data.questions.filter(q => q.is_essay === 0);
-      const essayQuestions = data.questions.filter(q => q.is_essay === 1);
-
-      // 객관식 점수 합계 계산
-      let totalScore = 0;
-      let maxScore = objectiveQuestions.length * 10;
-      objectiveQuestions.forEach(q => {
-        const ans = data.answers.find(a => a.question_id === q.question_id);
-        if (ans && ans.score !== null) {
-          totalScore += ans.score;
-        }
+  // 이미지 로드 대기 헬퍼
+  const waitForImages = (element) => {
+    const images = element.querySelectorAll('img');
+    const promises = Array.from(images).map((img) => {
+      if (img.complete) return Promise.resolve();
+      return new Promise((resolve) => {
+        img.onload = resolve;
+        img.onerror = resolve;
       });
+    });
+    return Promise.all(promises);
+  };
 
-      const objectiveHtml = objectiveQuestions.map((q, idx) => {
-        const ans = data.answers.find(a => a.question_id === q.question_id);
-        const scoreText = ans && ans.score !== null ? `${ans.score}점 / 10점` : '-';
-        
-        return `
-          <tr class="item-row">
-            <td class="center-text">${idx + 1}</td>
-            <td>
-              <div class="q-main">${q.question_text}</div>
-            </td>
-            <td class="center-text font-bold">${scoreText}</td>
-          </tr>
-        `;
-      }).join('');
+  // 개별 확인서 PDF 바이너리 생성 헬퍼 함수
+  const generateSinglePDFBytes = async (assignmentId) => {
+    const response = await fetch(`/api/admin/evaluations/${assignmentId}`);
+    if (!response.ok) {
+      throw new Error('평가 상세 정보를 가져오는데 실패했습니다.');
+    }
+    const data = await response.json();
+    
+    // 제출 일시 포맷팅
+    const formatDateStr = (dateStr) => {
+      if (!dateStr) return '';
+      try {
+        const date = new Date(dateStr);
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}년 ${month}월 ${day}일`;
+      } catch (e) {
+        return dateStr;
+      }
+    };
 
-      const totalRowHtml = `
-        <tr class="item-row" style="background-color: #f8fafc; font-weight: bold;">
-          <td class="center-text">${objectiveQuestions.length + 1}</td>
+    const formattedDate = formatDateStr(data.submitted_at);
+    const objectiveQuestions = data.questions.filter(q => q.is_essay === 0);
+    const essayQuestions = data.questions.filter(q => q.is_essay === 1);
+
+    // 객관식 점수 합계 계산
+    let totalScore = 0;
+    let maxScore = objectiveQuestions.length * 10;
+    objectiveQuestions.forEach(q => {
+      const ans = data.answers.find(a => a.question_id === q.question_id);
+      if (ans && ans.score !== null) {
+        totalScore += ans.score;
+      }
+    });
+
+    const objectiveHtml = objectiveQuestions.map((q, idx) => {
+      const ans = data.answers.find(a => a.question_id === q.question_id);
+      const scoreText = ans && ans.score !== null ? `${ans.score}점 / 10점` : '-';
+      
+      return `
+        <tr class="item-row">
+          <td class="center-text">${idx + 1}</td>
           <td>
-            <div class="q-main" style="color: #1e293b;">객관식 점수 합계</div>
+            <div class="q-main">${q.question_text}</div>
           </td>
-          <td class="center-text" style="color: #1d4ed8; font-weight: 800;">${totalScore}점 / ${maxScore}점</td>
+          <td class="center-text font-bold">${scoreText}</td>
         </tr>
       `;
+    }).join('');
 
-      const essayHtml = essayQuestions.map(q => {
-        const ans = data.answers.find(a => a.question_id === q.question_id);
-        const essayText = ans && ans.answer_text ? ans.answer_text.replace(/\n/g, '<br/>') : '';
-        
-        return `
-          <tr class="essay-row">
-            <td colspan="3" style="padding-top: 8px;">
-              <div class="essay-box">
-                <strong>[평가자 의견]</strong><br/>
-                <div style="margin-top: 4px; line-height: 1.4; color: #1e293b;">
-                  ${essayText || '<span style="color: #94a3b8; font-style: italic;">작성된 평가자 의견이 없습니다.</span>'}
-                </div>
+    const totalRowHtml = `
+      <tr class="item-row" style="background-color: #f8fafc; font-weight: bold;">
+        <td class="center-text">${objectiveQuestions.length + 1}</td>
+        <td>
+          <div class="q-main" style="color: #1e293b;">객관식 점수 합계</div>
+        </td>
+        <td class="center-text" style="color: #1d4ed8; font-weight: 800;">${totalScore}점 / ${maxScore}점</td>
+      </tr>
+    `;
+
+    const essayHtml = essayQuestions.map(q => {
+      const ans = data.answers.find(a => a.question_id === q.question_id);
+      const essayText = ans && ans.answer_text ? ans.answer_text.replace(/\n/g, '<br/>') : '';
+      
+      return `
+        <tr class="essay-row">
+          <td colspan="3" style="padding-top: 8px;">
+            <div class="essay-box">
+              <strong>[평가자 의견]</strong><br/>
+              <div style="margin-top: 4px; line-height: 1.4; color: #1e293b;">
+                ${essayText || '<span style="color: #94a3b8; font-style: italic;">작성된 평가자 의견이 없습니다.</span>'}
               </div>
-            </td>
-          </tr>
-        `;
-      }).join('');
-
-      const questionsHtml = objectiveHtml + totalRowHtml + essayHtml;
-
-      printWindow.document.write(`
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <meta charset="utf-8">
-          <title>${data.assignment.evaluatee_name} 사원 동료평가 완료 확인서</title>
-          <style>
-            body {
-              font-family: 'Malgun Gothic', '맑은 고딕', AppleSDGothicNeo, sans-serif;
-              color: #0f172a;
-              background-color: #ffffff;
-              margin: 0;
-              padding: 15px;
-            }
-            .contract-container {
-              max-width: 740px;
-              margin: 0 auto;
-              border: 1px solid #cbd5e1;
-              padding: 25px 35px;
-              box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
-              position: relative;
-            }
-            .main-title {
-              text-align: center;
-              font-size: 22px;
-              font-weight: 800;
-              letter-spacing: 5px;
-              margin-top: 10px;
-              margin-bottom: 15px;
-              color: #1e293b;
-              border-bottom: 2px double #475569;
-              padding-bottom: 8px;
-            }
-            .prologue {
-              font-size: 12px;
-              line-height: 1.5;
-              text-align: justify;
-              margin-bottom: 15px;
-              color: #334155;
-              text-indent: 10px;
-            }
-            .section-title {
-              font-size: 13.5px;
-              font-weight: 700;
-              margin-top: 15px;
-              margin-bottom: 6px;
-              color: #0f172a;
-              border-left: 4px solid #3b82f6;
-              padding-left: 8px;
-            }
-            .info-table {
-              width: 100%;
-              border-collapse: collapse;
-              margin-bottom: 12px;
-              font-size: 12px;
-            }
-            .info-table th, .info-table td {
-              border: 1px solid #cbd5e1;
-              padding: 6px 8px;
-            }
-            .info-table .label {
-              background-color: #f8fafc;
-              font-weight: 700;
-              width: 120px;
-              text-align: center;
-              color: #475569;
-            }
-            .info-table .value {
-              background-color: #ffffff;
-            }
-            .results-table {
-              width: 100%;
-              border-collapse: collapse;
-              margin-bottom: 15px;
-              font-size: 12px;
-            }
-            .results-table th, .results-table td {
-              border: 1px solid #cbd5e1;
-              padding: 6px 8px;
-            }
-            .results-table th {
-              background-color: #f8fafc;
-              font-weight: 700;
-              color: #475569;
-            }
-            .center-text {
-              text-align: center;
-            }
-            .font-bold {
-              font-weight: 700;
-            }
-            .q-main {
-              font-weight: 700;
-              color: #1e293b;
-            }
-            .essay-badge {
-              display: inline-block;
-              padding: 2px 6px;
-              background-color: #eff6ff;
-              color: #1d4ed8;
-              border-radius: 4px;
-              font-size: 11px;
-              font-weight: 700;
-            }
-            .essay-box {
-              background-color: #f8fafc;
-              border: 1px dashed #cbd5e1;
-              border-radius: 4px;
-              padding: 8px;
-              font-size: 11.5px;
-            }
-            .sign-block {
-              margin-top: 20px;
-              text-align: center;
-              border-top: 1px solid #e2e8f0;
-              padding-top: 15px;
-            }
-            .date-str {
-              font-size: 13px;
-              font-weight: 700;
-              letter-spacing: 2px;
-              color: #475569;
-              margin-bottom: 12px;
-            }
-            .signature-line {
-              display: inline-flex;
-              align-items: center;
-              justify-content: center;
-              gap: 40px;
-              font-size: 14px;
-              position: relative;
-              height: 40px;
-            }
-            .sig-wrapper {
-              position: relative;
-              width: 100px;
-              height: 35px;
-              display: flex;
-              align-items: center;
-            }
-            .sig-img {
-              max-width: 80px;
-              max-height: 35px;
-              position: absolute;
-              left: 0;
-              top: 50%;
-              transform: translateY(-50%);
-              mix-blend-mode: multiply;
-            }
-            .no-sig {
-              color: #94a3b8;
-              font-style: italic;
-              font-size: 11px;
-            }
-            @media print {
-              body {
-                padding: 0;
-                background-color: transparent;
-              }
-              .contract-container {
-                border: none;
-                padding: 5px 0;
-                box-shadow: none;
-              }
-              .results-table tr, .results-table td {
-                page-break-inside: avoid;
-              }
-            }
-          </style>
-        </head>
-        <body>
-          <div class="contract-container">
-            <h1 class="main-title">동 료 평 가 완 료 확 인 서</h1>
-            
-            <div class="prologue">
-              위 평가자는 신의성실의 원칙에 입각하여 동료평가를 공정하고 객관적으로 완수하였으며,
-              평가 대상자에 대한 다각적인 역량 평가와 서술식 피드백을 기록하여 제출하였음을 확인합니다.
             </div>
+          </td>
+        </tr>
+      `;
+    }).join('');
 
-            <div class="section-title">1. 평가 개요</div>
-            <table class="info-table">
-              <tr>
-                <td class="label">평가 프로젝트</td>
-                <td class="value" colspan="3">${data.assignment.project_title}</td>
-              </tr>
-              <tr>
-                <td class="label">피평가자(대상자)</td>
-                <td class="value">${data.assignment.evaluatee_name} ${data.assignment.evaluatee_position || '사원'}</td>
-                <td class="label">소속 부서</td>
-                <td class="value">${data.assignment.evaluatee_team || '부서없음'}</td>
-              </tr>
-              <tr>
-                <td class="label">평가자</td>
-                <td class="value">${data.assignment.evaluator_name} ${data.assignment.evaluator_position || '사원'}</td>
-                <td class="label">소속 부서</td>
-                <td class="value">${data.assignment.evaluator_team || '부서없음'}</td>
-              </tr>
-            </table>
+    const questionsHtml = objectiveHtml + totalRowHtml + essayHtml;
 
-            <div class="section-title">2. 평가 상세 내역</div>
-            <table class="results-table">
-              <thead>
-                <tr>
-                  <th style="width: 50px;">순번</th>
-                  <th>평가 문항 내용</th>
-                  <th style="width: 140px;">평가 결과</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${questionsHtml}
-              </tbody>
-            </table>
+    // 임시 컨테이너 생성 및 스타일 주입
+    const container = document.createElement('div');
+    container.style.position = 'absolute';
+    container.style.left = '-9999px';
+    container.style.top = '-9999px';
+    container.style.width = '794px';
+    container.style.boxSizing = 'border-box';
+    container.style.backgroundColor = '#ffffff';
 
-            <div class="sign-block">
-              <div class="date-str">${formattedDate}</div>
-              <div class="signature-line">
-                <span>평가자: <strong>${data.assignment.evaluator_name}</strong></span>
-                <div class="sig-wrapper">
-                  ${data.signature_data ? `<img src="${data.signature_data}" alt="서명" class="sig-img" />` : '<span class="no-sig">(서명 생략)</span>'}
-                </div>
-              </div>
+    container.innerHTML = `
+      <style>
+        .contract-container-pdf {
+          width: 794px;
+          box-sizing: border-box;
+          padding: 40px 50px;
+          background-color: #ffffff;
+          position: relative;
+          font-family: 'Malgun Gothic', '맑은 고딕', AppleSDGothicNeo, sans-serif;
+          color: #0f172a;
+        }
+        .main-title {
+          text-align: center;
+          font-size: 24px;
+          font-weight: 800;
+          letter-spacing: 5px;
+          margin-top: 10px;
+          margin-bottom: 20px;
+          color: #1e293b;
+          border-bottom: 2px double #475569;
+          padding-bottom: 10px;
+        }
+        .prologue {
+          font-size: 13px;
+          line-height: 1.6;
+          text-align: justify;
+          margin-bottom: 20px;
+          color: #334155;
+          text-indent: 10px;
+        }
+        .section-title {
+          font-size: 14.5px;
+          font-weight: 700;
+          margin-top: 20px;
+          margin-bottom: 8px;
+          color: #0f172a;
+          border-left: 4px solid #3b82f6;
+          padding-left: 8px;
+        }
+        .info-table {
+          width: 100%;
+          border-collapse: collapse;
+          margin-bottom: 15px;
+          font-size: 13px;
+        }
+        .info-table th, .info-table td {
+          border: 1px solid #cbd5e1;
+          padding: 8px 10px;
+        }
+        .info-table .label {
+          background-color: #f8fafc;
+          font-weight: 700;
+          width: 120px;
+          text-align: center;
+          color: #475569;
+        }
+        .info-table .value {
+          background-color: #ffffff;
+        }
+        .results-table {
+          width: 100%;
+          border-collapse: collapse;
+          margin-bottom: 20px;
+          font-size: 13px;
+        }
+        .results-table th, .results-table td {
+          border: 1px solid #cbd5e1;
+          padding: 8px 10px;
+        }
+        .results-table th {
+          background-color: #f8fafc;
+          font-weight: 700;
+          color: #475569;
+        }
+        .center-text {
+          text-align: center;
+        }
+        .font-bold {
+          font-weight: 700;
+        }
+        .q-main {
+          font-weight: 700;
+          color: #1e293b;
+        }
+        .essay-box {
+          background-color: #f8fafc;
+          border: 1px dashed #cbd5e1;
+          border-radius: 4px;
+          padding: 10px;
+          font-size: 12.5px;
+        }
+        .sign-block {
+          margin-top: 25px;
+          text-align: center;
+          border-top: 1px solid #e2e8f0;
+          padding-top: 20px;
+        }
+        .date-str {
+          font-size: 14px;
+          font-weight: 700;
+          letter-spacing: 2px;
+          color: #475569;
+          margin-bottom: 15px;
+        }
+        .signature-line {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 40px;
+          font-size: 15px;
+          position: relative;
+          height: 40px;
+        }
+        .sig-wrapper {
+          position: relative;
+          width: 100px;
+          height: 35px;
+          display: flex;
+          align-items: center;
+        }
+        .sig-img {
+          max-width: 80px;
+          max-height: 35px;
+          position: absolute;
+          left: 0;
+          top: 50%;
+          transform: translateY(-50%);
+          mix-blend-mode: multiply;
+        }
+        .no-sig {
+          color: #94a3b8;
+          font-style: italic;
+          font-size: 12px;
+        }
+      </style>
+      <div class="contract-container-pdf">
+        <h1 class="main-title">동 료 평 가 완 료 확 인 서</h1>
+        
+        <div class="prologue">
+          위 평가자는 신의성실의 원칙에 입각하여 동료평가를 공정하고 객관적으로 완수하였으며,
+          평가 대상자에 대한 다각적인 역량 평가와 서술식 피드백을 기록하여 제출하였음을 확인합니다.
+        </div>
+
+        <div class="section-title">1. 평가 개요</div>
+        <table class="info-table">
+          <tr>
+            <td class="label">평가 프로젝트</td>
+            <td class="value" colspan="3">${data.assignment.project_title}</td>
+          </tr>
+          <tr>
+            <td class="label">피평가자(대상자)</td>
+            <td class="value">${data.assignment.evaluatee_name} ${data.assignment.evaluatee_position || '사원'}</td>
+            <td class="label">소속 부서</td>
+            <td class="value">${data.assignment.evaluatee_team || '부서없음'}</td>
+          </tr>
+          <tr>
+            <td class="label">평가자</td>
+            <td class="value">${data.assignment.evaluator_name} ${data.assignment.evaluator_position || '사원'}</td>
+            <td class="label">소속 부서</td>
+            <td class="value">${data.assignment.evaluator_team || '부서없음'}</td>
+          </tr>
+        </table>
+
+        <div class="section-title">2. 평가 상세 내역</div>
+        <table class="results-table">
+          <thead>
+            <tr>
+              <th style="width: 50px;">순번</th>
+              <th>평가 문항 내용</th>
+              <th style="width: 140px;">평가 결과</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${questionsHtml}
+          </tbody>
+        </table>
+
+        <div class="sign-block">
+          <div class="date-str">${formattedDate}</div>
+          <div class="signature-line">
+            <span>평가자: <strong>${data.assignment.evaluator_name}</strong></span>
+            <div class="sig-wrapper">
+              ${data.signature_data ? `<img src="${data.signature_data}" alt="서명" class="sig-img" />` : '<span class="no-sig">(서명 생략)</span>'}
             </div>
           </div>
-        </body>
-        </html>
-      `);
+        </div>
+      </div>
+    `;
 
-      printWindow.document.close();
+    document.body.appendChild(container);
+
+    try {
+      await waitForImages(container);
       
-      printWindow.onload = () => {
-        printWindow.focus();
-        printWindow.print();
-      };
+      const canvas = await html2canvas(container, {
+        scale: 2,
+        useCORS: true,
+        allowTaint: true,
+        backgroundColor: '#ffffff'
+      });
 
-    } catch (err) {
-      alert(err.message);
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      pdf.addImage(imgData, 'PNG', 0, 0, 210, 297);
+      
+      const arrayBuffer = pdf.output('arraybuffer');
+      
+      return {
+        arrayBuffer,
+        pdfInstance: pdf,
+        assignmentInfo: data.assignment
+      };
+    } finally {
+      document.body.removeChild(container);
     }
   };
+
+  // 개별 평가지 PDF 직접 다운로드 처리
+  const handlePrintEvaluation = async (assignmentId) => {
+    setPdfLoading(true);
+    setPdfLoadingMsg('PDF 문서 생성 중...');
+    try {
+      const { pdfInstance, assignmentInfo } = await generateSinglePDFBytes(assignmentId);
+      const filename = `${assignmentInfo.evaluatee_name}_${assignmentInfo.evaluator_name}_동료평가완료확인서.pdf`;
+      pdfInstance.save(filename);
+    } catch (err) {
+      alert('PDF 생성에 실패했습니다: ' + err.message);
+    } finally {
+      setPdfLoading(false);
+      setPdfLoadingMsg('');
+    }
+  };
+
+  // 일괄 완료확인서 병합 PDF 생성 및 다운로드 처리
+  const handleBulkPDFDownload = async (projectId, projectTitle) => {
+    const completedAssigns = assignments.filter(
+      (a) => a.project_id === projectId && a.status === 'completed'
+    );
+
+    if (completedAssigns.length === 0) {
+      alert('완료된 평가 완료확인서가 없습니다.');
+      return;
+    }
+
+    setPdfLoading(true);
+    setPdfLoadingMsg('PDF 병합 준비 중...');
+
+    try {
+      const mergedPdf = await PDFDocument.create();
+      
+      for (let i = 0; i < completedAssigns.length; i++) {
+        const item = completedAssigns[i];
+        setPdfLoadingMsg(`PDF 생성 중... (${i + 1}/${completedAssigns.length}명 완료)`);
+        
+        const { arrayBuffer } = await generateSinglePDFBytes(item.assignment_id);
+        const subPdf = await PDFDocument.load(arrayBuffer);
+        const copiedPages = await mergedPdf.copyPages(subPdf, subPdf.getPageIndices());
+        copiedPages.forEach((page) => {
+          mergedPdf.addPage(page);
+        });
+      }
+
+      setPdfLoadingMsg('PDF 병합 완료 및 다운로드 준비 중...');
+      const mergedPdfBytes = await mergedPdf.save();
+      const blob = new Blob([mergedPdfBytes], { type: 'application/pdf' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `${projectTitle}_동료평가완료확인서_일괄.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (err) {
+      alert('일괄 PDF 병합에 실패했습니다: ' + err.message);
+    } finally {
+      setPdfLoading(false);
+      setPdfLoadingMsg('');
+    }
+  };
+
 
   // 평가 프로젝트 생성
   const handleCreateProject = async (e) => {
@@ -2410,9 +2469,28 @@ function AdminDashboard({ onLogout }) {
 
                               {/* 배정된 평가자 세부 관리 */}
                               <div>
-                                <h5 style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-secondary)', marginBottom: '8px', textAlign: 'left' }}>
-                                  배정된 평가자 목록 및 개별 상태 제어
-                                </h5>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                                  <h5 style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-secondary)', margin: 0, textAlign: 'left' }}>
+                                    배정된 평가자 목록 및 개별 상태 제어
+                                  </h5>
+                                  {projAssignments.some(item => item.status === 'completed') && (
+                                    <button
+                                      onClick={() => handleBulkPDFDownload(proj.project_id, proj.title)}
+                                      style={{
+                                        border: '1px solid var(--primary-color)',
+                                        backgroundColor: 'var(--primary-color)',
+                                        color: '#ffffff',
+                                        fontSize: '11px',
+                                        fontWeight: '700',
+                                        padding: '4px 10px',
+                                        borderRadius: '4px',
+                                        cursor: 'pointer'
+                                      }}
+                                    >
+                                      완료확인서 일괄 PDF 다운로드
+                                    </button>
+                                  )}
+                                </div>
 
                                 {projAssignments.length === 0 ? (
                                   <p style={{ fontSize: '12px', color: 'var(--text-muted)', fontStyle: 'italic', margin: '4px 0', textAlign: 'left' }}>
@@ -2807,6 +2885,57 @@ function AdminDashboard({ onLogout }) {
           </div>
         )}
       </div>
+      {pdfLoading && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(15, 23, 42, 0.6)',
+          backdropFilter: 'blur(4px)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 9999,
+        }}>
+          <div className="card" style={{
+            padding: '30px 40px',
+            maxWidth: '400px',
+            width: '100%',
+            textAlign: 'center',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+            borderRadius: '12px',
+            backgroundColor: '#ffffff',
+            border: 'none'
+          }}>
+            <div style={{
+              margin: '0 auto 16px auto',
+              border: '4px solid #f3f3f3',
+              borderTop: '4px solid var(--primary-color)',
+              borderRadius: '50%',
+              width: '40px',
+              height: '40px',
+              animation: 'spin 1s linear infinite'
+            }} />
+            <style>{`
+              @keyframes spin {
+                0% { transform: rotate(0deg); }
+                100% { transform: rotate(360deg); }
+              }
+            `}</style>
+            <h4 style={{ fontSize: '16px', fontWeight: '700', color: 'var(--text-primary)', marginBottom: '8px' }}>
+              PDF 문서 생성 중
+            </h4>
+            <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: 0 }}>
+              {pdfLoadingMsg}
+            </p>
+            <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '8px', fontStyle: 'italic' }}>
+              잠시만 기다려 주세요. 이 작업은 다소 시간이 걸릴 수 있습니다.
+            </p>
+          </div>
+        </div>
+      )}
     </>
   );
 }
