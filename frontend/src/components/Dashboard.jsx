@@ -108,7 +108,7 @@ function Dashboard({ user, onSelectAssignment, onLogout }) {
                     }}
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div>
+                      <div style={{ paddingRight: '12px' }}>
                         <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', marginBottom: '6px' }}>
                           <span style={{ fontSize: '18px', fontWeight: '700', color: 'var(--text-primary)' }}>
                             {item.project_title || `${item.name} 사원 동료평가`}
@@ -120,7 +120,7 @@ function Dashboard({ user, onSelectAssignment, onLogout }) {
                       </div>
 
                       {/* 상태 뱃지 */}
-                      <div>
+                      <div style={{ flexShrink: 0 }}>
                         {isCompleted ? (
                           <span style={{
                             padding: '6px 10px',
@@ -128,7 +128,8 @@ function Dashboard({ user, onSelectAssignment, onLogout }) {
                             backgroundColor: '#d1fae5',
                             color: '#065f46',
                             fontSize: '12px',
-                            fontWeight: '600'
+                            fontWeight: '600',
+                            whiteSpace: 'nowrap'
                           }}>
                             제출 완료
                           </span>
@@ -139,7 +140,8 @@ function Dashboard({ user, onSelectAssignment, onLogout }) {
                             backgroundColor: '#fef3c7',
                             color: '#d97706',
                             fontSize: '12px',
-                            fontWeight: '600'
+                            fontWeight: '600',
+                            whiteSpace: 'nowrap'
                           }}>
                             임시 저장
                           </span>
@@ -150,7 +152,8 @@ function Dashboard({ user, onSelectAssignment, onLogout }) {
                             backgroundColor: '#eff6ff',
                             color: 'var(--primary-color)',
                             fontSize: '12px',
-                            fontWeight: '600'
+                            fontWeight: '600',
+                            whiteSpace: 'nowrap'
                           }}>
                             평가 대기
                           </span>
