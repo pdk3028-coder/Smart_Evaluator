@@ -115,7 +115,7 @@ body {
 /* 카드 및 공통 UI 레이아웃 */
 .page-content {
   flex: 1;
-  padding: 20px;
+  padding: 20px 20px 80px 20px;
   display: flex;
   flex-direction: column;
   gap: 16px;
