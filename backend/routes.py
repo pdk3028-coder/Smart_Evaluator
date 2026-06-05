@@ -65,7 +65,7 @@ class EmployeeCreateRequest(BaseModel):
     phone: Optional[str] = ""
 
 @router.post("/auth/login")
-def login(request: LoginRequest):
+async def login(request: LoginRequest):
     """사원번호(사번) 로그인 및 관리자 패스워드 인증을 진행합니다."""
     emp_id = request.emp_id.strip()
     
@@ -102,7 +102,7 @@ def login(request: LoginRequest):
         raise HTTPException(status_code=404, detail="등록되지 않은 사번입니다.")
 
 @router.get("/evaluations/assignments")
-def get_assignments(evaluator_id: int):
+async def get_assignments(evaluator_id: int):
     """로그인한 평가자에게 지정된 평가 프로젝트(피평가자) 목록을 반환합니다. 평가 기간에 해당하는 프로젝트만 조회됩니다."""
     import datetime
     today_str = datetime.date.today().strftime('%Y-%m-%d')
@@ -135,7 +135,7 @@ def get_assignments(evaluator_id: int):
     return [dict(row) for row in rows]
 
 @router.get("/evaluations/questions")
-def get_questions():
+async def get_questions():
     """데이터베이스에 등록된 평가 문항 목록을 반환합니다."""
     conn = db.get_db_connection()
     rows = conn.execute('SELECT * FROM evaluation_questions WHERE is_active = 1 ORDER BY sort_order ASC, id ASC').fetchall()
@@ -143,7 +143,7 @@ def get_questions():
     return [dict(row) for row in rows]
 
 @router.post("/evaluations/submit")
-def submit_evaluation(request: SubmitEvaluationRequest):
+async def submit_evaluation(request: SubmitEvaluationRequest):
     """동료 사원에 대한 평가 결과를 최종 제출하고 배정 상태를 완료로 업데이트합니다. 기존 임시저장이 있으면 제거합니다."""
     import sqlite3
     conn = db.get_db_connection()
@@ -190,7 +190,7 @@ def submit_evaluation(request: SubmitEvaluationRequest):
         conn.close()
 
 @router.post("/evaluations/draft")
-def save_evaluation_draft(request: SubmitEvaluationRequest):
+async def save_evaluation_draft(request: SubmitEvaluationRequest):
     """동료 사원에 대한 평가 내용을 임시 저장합니다. 기존 임시저장이 있으면 제거하고 다시 씁니다."""
     import sqlite3
     conn = db.get_db_connection()
@@ -238,7 +238,7 @@ def save_evaluation_draft(request: SubmitEvaluationRequest):
         conn.close()
 
 @router.get("/evaluations/draft")
-def get_evaluation_draft(assignment_id: int):
+async def get_evaluation_draft(assignment_id: int):
     """특정 배정 건에 대해 기존 임시 저장된 답변 데이터를 조회하여 반환합니다."""
     conn = db.get_db_connection()
     try:
@@ -263,12 +263,12 @@ def get_evaluation_draft(assignment_id: int):
 # --- 관리자(ADMIN) 전용 API ---
 
 @router.get("/admin/employees")
-def admin_get_employees():
+async def admin_get_employees():
     """관리자용: 전체 사원 목록을 반환합니다."""
     return db.get_all_employees()
 
 @router.post("/admin/employees")
-def admin_create_employee(req: EmployeeCreateRequest):
+async def admin_create_employee(req: EmployeeCreateRequest):
     """관리자용: 개별 사원을 직접 등록합니다."""
     emp_id = req.emp_id.strip()
     name = req.name.strip()
@@ -290,7 +290,7 @@ def admin_create_employee(req: EmployeeCreateRequest):
     return {"message": msg}
 
 @router.get("/admin/results/export")
-def admin_export_results():
+async def admin_export_results():
     """관리자용: 전체 평가 결과를 피벗 테이블 형식의 Excel 파일로 내보냅니다."""
     try:
         df = db.get_evaluation_results_for_export()
@@ -313,7 +313,7 @@ def admin_export_results():
         raise HTTPException(status_code=500, detail=f"엑셀 생성 중 오류 발생: {str(e)}")
 
 @router.get("/admin/evaluations/{assignment_id}")
-def admin_get_evaluation_detail(assignment_id: int):
+async def admin_get_evaluation_detail(assignment_id: int):
     """관리자용: 특정 완료된 배정 건의 상세 답변 정보 및 서명 데이터를 조회합니다."""
     conn = db.get_db_connection()
     try:
@@ -376,7 +376,7 @@ def admin_get_evaluation_detail(assignment_id: int):
         conn.close()
 
 @router.get("/admin/assignments")
-def admin_get_assignments():
+async def admin_get_assignments():
     """관리자용: 모든 동료 평가 배정 현황 목록을 반환합니다."""
     conn = db.get_db_connection()
     query = '''
@@ -408,7 +408,7 @@ def admin_get_assignments():
     return [dict(row) for row in rows]
 
 @router.post("/admin/assignments")
-def admin_create_assignment(request: AssignmentRequest):
+async def admin_create_assignment(request: AssignmentRequest):
     """관리자용: 새로운 평가자 배정 관계를 추가합니다."""
     conn = db.get_db_connection()
     c = conn.cursor()
@@ -454,7 +454,7 @@ def admin_create_assignment(request: AssignmentRequest):
         conn.close()
 
 @router.post("/admin/projects")
-def admin_create_project(request: ProjectCreateRequest):
+async def admin_create_project(request: ProjectCreateRequest):
     """관리자용: 새로운 평가 프로젝트를 생성합니다."""
     try:
         project_id = db.create_evaluation_project(
@@ -467,7 +467,7 @@ def admin_create_project(request: ProjectCreateRequest):
         raise HTTPException(status_code=400, detail=str(e))
 
 @router.get("/admin/projects")
-def admin_get_projects():
+async def admin_get_projects():
     """관리자용: 모든 평가 프로젝트 목록을 조회합니다."""
     try:
         return db.get_all_projects()
@@ -475,7 +475,7 @@ def admin_get_projects():
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.delete("/admin/projects/{project_id}")
-def admin_delete_project(project_id: int):
+async def admin_delete_project(project_id: int):
     """관리자용: 특정 평가 프로젝트를 삭제합니다."""
     try:
         db.delete_evaluation_project(project_id)
@@ -484,7 +484,7 @@ def admin_delete_project(project_id: int):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.delete("/admin/assignments/{assignment_id}")
-def admin_delete_assignment(assignment_id: int):
+async def admin_delete_assignment(assignment_id: int):
     """관리자용: 특정 평가 배정 관계를 삭제합니다."""
     conn = db.get_db_connection()
     c = conn.cursor()
@@ -502,7 +502,7 @@ def admin_delete_assignment(assignment_id: int):
         conn.close()
 
 @router.post("/admin/upload-excel")
-def admin_upload_excel(file: UploadFile = File(...)):
+async def admin_upload_excel(file: UploadFile = File(...)):
     """관리자용: 사원명부 엑셀 파일을 업로드받아 DB에 일괄 반영합니다."""
     # 업로드 임시 디렉토리 보장
     import platform
@@ -532,7 +532,7 @@ def admin_upload_excel(file: UploadFile = File(...)):
             os.remove(file_path)
 
 @router.post("/admin/assignments/bulk")
-def admin_create_assignments_bulk(request: BulkAssignmentRequest):
+async def admin_create_assignments_bulk(request: BulkAssignmentRequest):
     """관리자용: 특정 프로젝트에 다수의 평가자를 일괄 배정합니다."""
     conn = db.get_db_connection()
     c = conn.cursor()
@@ -570,7 +570,7 @@ def admin_create_assignments_bulk(request: BulkAssignmentRequest):
         conn.close()
 
 @router.get("/admin/last-upload-time")
-def admin_get_last_upload_time():
+async def admin_get_last_upload_time():
     """관리자용: 최근 사원명부 엑셀 업로드 시간을 반환합니다."""
     try:
         last_time = db.get_setting('last_upload_time', '업로드 기록 없음')
@@ -579,7 +579,7 @@ def admin_get_last_upload_time():
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/common/upload-status")
-def common_get_upload_status():
+async def common_get_upload_status():
     """공통: 최근 사원명부 엑셀 업로드 시간과 총 사원 수를 반환합니다."""
     conn = db.get_db_connection()
     try:
@@ -601,7 +601,7 @@ def common_get_upload_status():
         conn.close()
 
 @router.patch("/admin/projects/{project_id}/period")
-def admin_update_project_period(project_id: int, request: ProjectPeriodUpdateRequest):
+async def admin_update_project_period(project_id: int, request: ProjectPeriodUpdateRequest):
     """관리자용: 특정 프로젝트의 평가 기간을 수정합니다."""
     import sqlite3
     conn = db.get_db_connection()
@@ -627,7 +627,7 @@ def admin_update_project_period(project_id: int, request: ProjectPeriodUpdateReq
         conn.close()
 
 @router.get("/admin/questions")
-def admin_get_questions():
+async def admin_get_questions():
     """관리자용: 모든 평가 문항 목록(비활성 포함)을 반환합니다."""
     conn = db.get_db_connection()
     rows = conn.execute('SELECT * FROM evaluation_questions ORDER BY sort_order ASC, id ASC').fetchall()
@@ -635,7 +635,7 @@ def admin_get_questions():
     return [dict(row) for row in rows]
 
 @router.post("/admin/questions")
-def admin_create_question(request: QuestionRequest):
+async def admin_create_question(request: QuestionRequest):
     """관리자용: 새로운 평가 문항을 추가합니다."""
     conn = db.get_db_connection()
     c = conn.cursor()
@@ -657,7 +657,7 @@ def admin_create_question(request: QuestionRequest):
         conn.close()
 
 @router.put("/admin/questions/{question_id}")
-def admin_update_question(question_id: int, request: QuestionRequest):
+async def admin_update_question(question_id: int, request: QuestionRequest):
     """관리자용: 특정 평가 문항을 수정합니다."""
     conn = db.get_db_connection()
     c = conn.cursor()
@@ -681,7 +681,7 @@ def admin_update_question(question_id: int, request: QuestionRequest):
         conn.close()
 
 @router.delete("/admin/questions/{question_id}")
-def admin_delete_question(question_id: int):
+async def admin_delete_question(question_id: int):
     """관리자용: 특정 평가 문항을 삭제(비활성화)합니다."""
     conn = db.get_db_connection()
     c = conn.cursor()
@@ -706,7 +706,7 @@ def admin_delete_question(question_id: int):
         conn.close()
 
 @router.patch("/admin/questions/{question_id}/activate")
-def admin_activate_question(question_id: int):
+async def admin_activate_question(question_id: int):
     """관리자용: 특정 비활성화된 평가 문항을 다시 활성화합니다."""
     conn = db.get_db_connection()
     c = conn.cursor()
@@ -721,7 +721,7 @@ def admin_activate_question(question_id: int):
         conn.close()
 
 @router.patch("/admin/questions/reorder")
-def admin_reorder_questions(request: ReorderQuestionsRequest):
+async def admin_reorder_questions(request: ReorderQuestionsRequest):
     """관리자용: 평가 문항들의 순서(sort_order)를 일괄 조정합니다."""
     import sqlite3
     conn = db.get_db_connection()
@@ -742,7 +742,7 @@ def admin_reorder_questions(request: ReorderQuestionsRequest):
         conn.close()
 
 @router.patch("/admin/assignments/{assignment_id}/status")
-def admin_update_assignment_status(assignment_id: int, request: AssignmentStatusUpdateRequest):
+async def admin_update_assignment_status(assignment_id: int, request: AssignmentStatusUpdateRequest):
     """관리자용: 특정 평가 배정 건의 진행 상태를 변경합니다."""
     status_val = request.status.strip().lower()
     if status_val not in ['pending', 'saved', 'completed']:
