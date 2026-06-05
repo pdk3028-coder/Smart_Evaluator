@@ -410,7 +410,7 @@ function AdminDashboard({ onLogout }) {
         <tr class="item-row">
           <td class="center-text">${idx + 1}</td>
           <td>
-            <div class="q-main">${q.question_text}</div>
+            <div class="q-main">${q.category}</div>
           </td>
           <td class="center-text font-bold">${scoreText}</td>
         </tr>
@@ -624,7 +624,7 @@ function AdminDashboard({ onLogout }) {
           <thead>
             <tr>
               <th style="width: 50px;">순번</th>
-              <th>평가 문항 내용</th>
+              <th>평가항목</th>
               <th style="width: 140px;">평가 결과</th>
             </tr>
           </thead>
