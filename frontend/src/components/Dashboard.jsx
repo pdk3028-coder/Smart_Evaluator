@@ -107,20 +107,29 @@ function Dashboard({ user, onSelectAssignment, onLogout }) {
                       }
                     }}
                   >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div style={{ paddingRight: '12px' }}>
-                        <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', marginBottom: '6px' }}>
-                          <span style={{ fontSize: '18px', fontWeight: '700', color: 'var(--text-primary)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
+                      <div style={{ flex: 1, minWidth: 0, paddingRight: '4px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
+                          <span style={{
+                            fontSize: '17px',
+                            fontWeight: '700',
+                            color: 'var(--text-primary)',
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            display: 'block',
+                            maxWidth: '100%'
+                          }}>
                             {item.project_title || `${item.name} 사원 동료평가`}
                           </span>
                         </div>
-                        <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
+                        <p style={{ fontSize: '13px', color: 'var(--text-muted)', margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                           대상자: {item.name} {item.position || ''} | 소속: {item.team_name || '소속 없음'} | 사번: {item.emp_id}
                         </p>
                       </div>
 
                       {/* 상태 뱃지 */}
-                      <div style={{ flexShrink: 0 }}>
+                      <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center' }}>
                         {isCompleted ? (
                           <span style={{
                             padding: '6px 10px',
