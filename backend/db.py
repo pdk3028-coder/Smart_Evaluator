@@ -78,9 +78,64 @@ def init_db():
             is_essay INTEGER DEFAULT 0,  -- 0: 객관식(5점 척도), 1: 주관식(서술형)
             sort_order INTEGER DEFAULT 0,
             is_active INTEGER DEFAULT 1,
+            evaluation_type TEXT DEFAULT '동료사원 평가',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
+
+    # evaluation_projects 복합 유니크 마이그레이션 사전 검사
+    cursor = c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='evaluation_projects'")
+    proj_table_exists = cursor.fetchone() is not None
+
+    if proj_table_exists:
+        sql_row = c.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='evaluation_projects'").fetchone()
+        proj_sql = sql_row['sql'] if sql_row else ""
+        
+        # 기존 테이블 정의에 UNIQUE 제약이 존재하고 복합 유니크 제약이 설정되어 있지 않은 경우 마이그레이션 수행
+        if 'UNIQUE' in proj_sql and 'evaluation_type' not in proj_sql:
+            print("마이그레이션: evaluation_projects 테이블을 복합 유니크(evaluatee_id, evaluation_type) 구조로 변경합니다.")
+            c.execute("PRAGMA foreign_keys = OFF")
+            
+            # 임시 테이블 생성
+            c.execute('''
+                CREATE TABLE evaluation_projects_new (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    evaluatee_id INTEGER NOT NULL,
+                    title TEXT NOT NULL,
+                    status TEXT DEFAULT 'active',
+                    start_date TEXT,
+                    end_date TEXT,
+                    evaluation_type TEXT DEFAULT '동료사원 평가',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (evaluatee_id) REFERENCES employees (id) ON DELETE CASCADE,
+                    UNIQUE(evaluatee_id, evaluation_type)
+                )
+            ''')
+            
+            # 기존 데이터 복사 (start_date, end_date가 존재할 수도 있고 아닐 수도 있으므로 pragma 체크 결과를 기준으로 복사)
+            cursor_temp = c.execute("PRAGMA table_info(evaluation_projects)")
+            temp_columns = [row[1] for row in cursor_temp.fetchall()]
+            
+            select_cols = "id, evaluatee_id, title, status, created_at"
+            target_cols = "id, evaluatee_id, title, status, created_at"
+            
+            if 'start_date' in temp_columns:
+                select_cols += ", start_date"
+                target_cols += ", start_date"
+            if 'end_date' in temp_columns:
+                select_cols += ", end_date"
+                target_cols += ", end_date"
+                
+            c.execute(f'''
+                INSERT INTO evaluation_projects_new ({target_cols}, evaluation_type)
+                SELECT {select_cols}, '동료사원 평가'
+                FROM evaluation_projects
+            ''')
+            
+            c.execute("DROP TABLE evaluation_projects")
+            c.execute("ALTER TABLE evaluation_projects_new RENAME TO evaluation_projects")
+            c.execute("PRAGMA foreign_keys = ON")
+            print("마이그레이션: evaluation_projects 복합 유니크 개편 완료.")
 
     # 5. evaluation_assignments 및 evaluation_projects 테이블 마이그레이션 및 생성
     cursor = c.execute("PRAGMA table_info(evaluation_assignments)")
@@ -100,13 +155,15 @@ def init_db():
         c.execute('''
             CREATE TABLE IF NOT EXISTS evaluation_projects (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                evaluatee_id INTEGER NOT NULL UNIQUE,
+                evaluatee_id INTEGER NOT NULL,
                 title TEXT NOT NULL,
                 status TEXT DEFAULT 'active',
                 start_date TEXT,
                 end_date TEXT,
+                evaluation_type TEXT DEFAULT '동료사원 평가',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (evaluatee_id) REFERENCES employees (id) ON DELETE CASCADE
+                FOREIGN KEY (evaluatee_id) REFERENCES employees (id) ON DELETE CASCADE,
+                UNIQUE(evaluatee_id, evaluation_type)
             )
         ''')
         
@@ -116,12 +173,12 @@ def init_db():
             ee_id = row['evaluatee_id']
             ee_name = row['evaluatee_name']
             if ee_id not in project_map:
-                exist_proj = c.execute('SELECT id FROM evaluation_projects WHERE evaluatee_id = ?', (ee_id,)).fetchone()
+                exist_proj = c.execute('SELECT id FROM evaluation_projects WHERE evaluatee_id = ? AND evaluation_type = ?', (ee_id, '동료사원 평가')).fetchone()
                 if exist_proj:
                     project_map[ee_id] = exist_proj[0]
                 else:
                     title = f"{ee_name} 사원 동료평가"
-                    c.execute('INSERT INTO evaluation_projects (evaluatee_id, title) VALUES (?, ?)', (ee_id, title))
+                    c.execute("INSERT INTO evaluation_projects (evaluatee_id, title, evaluation_type) VALUES (?, ?, '동료사원 평가')", (ee_id, title))
                     project_map[ee_id] = c.lastrowid
         
         # 기존 assignments 테이블 이름을 임시 변경
@@ -163,13 +220,15 @@ def init_db():
         c.execute('''
             CREATE TABLE IF NOT EXISTS evaluation_projects (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                evaluatee_id INTEGER NOT NULL UNIQUE,
+                evaluatee_id INTEGER NOT NULL,
                 title TEXT NOT NULL,
                 status TEXT DEFAULT 'active',
                 start_date TEXT,
                 end_date TEXT,
+                evaluation_type TEXT DEFAULT '동료사원 평가',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (evaluatee_id) REFERENCES employees (id) ON DELETE CASCADE
+                FOREIGN KEY (evaluatee_id) REFERENCES employees (id) ON DELETE CASCADE,
+                UNIQUE(evaluatee_id, evaluation_type)
             )
         ''')
         
@@ -186,7 +245,7 @@ def init_db():
             )
         ''')
 
-    # evaluation_projects 테이블 컬럼 마이그레이션 (start_date, end_date 추가)
+    # evaluation_projects 테이블 컬럼 마이그레이션 (start_date, end_date, evaluation_type 추가)
     cursor = c.execute("PRAGMA table_info(evaluation_projects)")
     proj_columns = [row[1] for row in cursor.fetchall()]
     if 'start_date' not in proj_columns:
@@ -195,8 +254,11 @@ def init_db():
     if 'end_date' not in proj_columns:
         print("마이그레이션: evaluation_projects 테이블에 end_date 컬럼을 추가합니다.")
         c.execute("ALTER TABLE evaluation_projects ADD COLUMN end_date TEXT")
+    if 'evaluation_type' not in proj_columns:
+        print("마이그레이션: evaluation_projects 테이블에 evaluation_type 컬럼을 추가합니다.")
+        c.execute("ALTER TABLE evaluation_projects ADD COLUMN evaluation_type TEXT DEFAULT '동료사원 평가'")
 
-    # evaluation_questions 테이블 컬럼 마이그레이션 (sort_order 추가)
+    # evaluation_questions 테이블 컬럼 마이그레이션 (sort_order, question_sub_text, evaluation_type 추가)
     cursor = c.execute("PRAGMA table_info(evaluation_questions)")
     q_columns = [row[1] for row in cursor.fetchall()]
     if 'sort_order' not in q_columns:
@@ -208,8 +270,11 @@ def init_db():
         print("마이그레이션: evaluation_questions 테이블에 question_sub_text 컬럼을 추가합니다.")
         c.execute("ALTER TABLE evaluation_questions ADD COLUMN question_sub_text TEXT DEFAULT ''")
 
+    if 'evaluation_type' not in q_columns:
+        print("마이그레이션: evaluation_questions 테이블에 evaluation_type 컬럼을 추가합니다.")
+        c.execute("ALTER TABLE evaluation_questions ADD COLUMN evaluation_type TEXT DEFAULT '동료사원 평가'")
+
     # 6. evaluations 테이블 생성 및 마이그레이션 (평가 제출 기본 정보)
-    # 기존에 RENAME 과정에서 evaluations 테이블의 외래키 대상이 evaluation_assignments_old로 꼬인 경우 정정합니다.
     eval_sql_row = c.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='evaluations'").fetchone()
     if eval_sql_row and 'evaluation_assignments_old' in eval_sql_row['sql']:
         print("마이그레이션: evaluations 테이블의 외래키 참조를 evaluation_assignments_old에서 evaluation_assignments로 정정합니다.")
@@ -290,8 +355,8 @@ def init_db():
         ]
         for idx, (q_text, cat, is_essay) in enumerate(default_questions):
             c.execute('''
-                INSERT INTO evaluation_questions (question_text, category, is_essay, sort_order)
-                VALUES (?, ?, ?, ?)
+                INSERT INTO evaluation_questions (question_text, category, is_essay, sort_order, evaluation_type)
+                VALUES (?, ?, ?, ?, '동료사원 평가')
             ''', (q_text, cat, is_essay, idx + 1))
         print("마이그레이션: 기본 평가 문항 4개를 등록했습니다.")
 
@@ -464,8 +529,8 @@ def upsert_employees_from_excel(filepath):
     conn.close()
     return inserted_count, updated_count, skipped_count
 
-def create_evaluation_project(evaluatee_id, start_date=None, end_date=None):
-    """피평가자 ID로 평가 프로젝트를 생성합니다. 이미 존재하면 기존 프로젝트 ID를 반환하고 기간을 업데이트합니다."""
+def create_evaluation_project(evaluatee_id, evaluation_type="동료사원 평가", start_date=None, end_date=None):
+    """피평가자 ID와 평가 종류로 평가 프로젝트를 생성합니다. 이미 존재하면 기존 프로젝트 ID를 반환하고 기간을 업데이트합니다."""
     conn = get_db_connection()
     c = conn.cursor()
     
@@ -474,9 +539,13 @@ def create_evaluation_project(evaluatee_id, start_date=None, end_date=None):
         conn.close()
         raise Exception("존재하지 않는 사원입니다.")
     
-    title = f"{emp['name']} 사원 동료평가"
+    title = f"{emp['name']} 사원 {evaluation_type}"
     
-    existing = c.execute('SELECT id FROM evaluation_projects WHERE evaluatee_id = ?', (evaluatee_id,)).fetchone()
+    existing = c.execute('''
+        SELECT id FROM evaluation_projects 
+        WHERE evaluatee_id = ? AND evaluation_type = ?
+    ''', (evaluatee_id, evaluation_type)).fetchone()
+    
     if existing:
         if start_date and end_date:
             c.execute('''
@@ -489,9 +558,9 @@ def create_evaluation_project(evaluatee_id, start_date=None, end_date=None):
         return existing['id']
         
     c.execute('''
-        INSERT INTO evaluation_projects (evaluatee_id, title, start_date, end_date)
-        VALUES (?, ?, ?, ?)
-    ''', (evaluatee_id, title, start_date, end_date))
+        INSERT INTO evaluation_projects (evaluatee_id, title, evaluation_type, start_date, end_date)
+        VALUES (?, ?, ?, ?, ?)
+    ''', (evaluatee_id, title, evaluation_type, start_date, end_date))
     project_id = c.lastrowid
     conn.commit()
     conn.close()
@@ -537,6 +606,7 @@ def get_all_projects():
             p.status, 
             p.start_date,
             p.end_date,
+            p.evaluation_type,
             datetime(p.created_at, 'localtime') as created_at,
             e.id as evaluatee_id, 
             e.name as evaluatee_name, 

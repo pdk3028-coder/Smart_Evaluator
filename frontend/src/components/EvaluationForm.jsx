@@ -19,7 +19,7 @@ function EvaluationForm({ user, assignment, onBack, onSubmitSuccess }) {
   const fetchQuestionsAndDraft = async () => {
     try {
       const [qRes, draftRes] = await Promise.all([
-        fetch('/api/evaluations/questions'),
+        fetch(`/api/evaluations/questions?assignment_id=${assignment.assignment_id}`),
         fetch(`/api/evaluations/draft?assignment_id=${assignment.assignment_id}`)
       ]);
 

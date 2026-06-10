@@ -97,6 +97,12 @@ function AdminDashboard({ onLogout }) {
 
   const [startDate, setStartDate] = useState(getTodayStr());
   const [endDate, setEndDate] = useState(getWeekLaterStr());
+  const [evaluationType, setEvaluationType] = useState('동료사원 평가');
+
+  // 평가 문항 추가 상태
+  const [questionEvaluationType, setQuestionEvaluationType] = useState('동료사원 평가');
+  const [editQuestionEvaluationType, setEditQuestionEvaluationType] = useState('동료사원 평가');
+  const [questionFilterType, setQuestionFilterType] = useState('전체');
 
   // 인라인 기간 수정 관련 상태 및 함수
   const [editingProjectId, setEditingProjectId] = useState(null);
@@ -755,6 +761,7 @@ function AdminDashboard({ onLogout }) {
         },
         body: JSON.stringify({
           evaluatee_id: parseInt(projectEvaluateeId, 10),
+          evaluation_type: evaluationType,
           start_date: startDate,
           end_date: endDate
         }),
@@ -768,6 +775,7 @@ function AdminDashboard({ onLogout }) {
       setProjCreateSuccess(data.message);
       setProjectEvaluateeId('');
       setEvaluateeSearchText('');
+      setEvaluationType('동료사원 평가');
       fetchData();
     } catch (err) {
       setProjCreateError(err.message);
@@ -1129,7 +1137,8 @@ function AdminDashboard({ onLogout }) {
           question_text: questionText,
           question_sub_text: questionSubText,
           category: questionCategory,
-          is_essay: parseInt(questionIsEssay, 10)
+          is_essay: parseInt(questionIsEssay, 10),
+          evaluation_type: questionEvaluationType
         }),
       });
 
@@ -1143,6 +1152,7 @@ function AdminDashboard({ onLogout }) {
       setQuestionSubText('');
       setQuestionCategory('');
       setQuestionIsEssay(0);
+      setQuestionEvaluationType('동료사원 평가');
       fetchData();
     } catch (err) {
       alert(err.message);
@@ -1156,6 +1166,7 @@ function AdminDashboard({ onLogout }) {
     setEditQuestionSubText(q.question_sub_text || '');
     setEditQuestionCategory(q.category);
     setEditQuestionIsEssay(q.is_essay);
+    setEditQuestionEvaluationType(q.evaluation_type || '동료사원 평가');
   };
 
   // 평가 문항 수정 저장
@@ -1175,7 +1186,8 @@ function AdminDashboard({ onLogout }) {
           question_text: editQuestionText,
           question_sub_text: editQuestionSubText,
           category: editQuestionCategory,
-          is_essay: parseInt(editQuestionIsEssay, 10)
+          is_essay: parseInt(editQuestionIsEssay, 10),
+          evaluation_type: editQuestionEvaluationType
         }),
       });
 
@@ -1678,6 +1690,20 @@ function AdminDashboard({ onLogout }) {
                         )}
                       </div>
                     )}
+                  </div>
+
+                  <div className="input-group">
+                    <label className="input-label" style={{ fontSize: '13px' }}>평가 종류 선택</label>
+                    <select
+                      className="input-field"
+                      value={evaluationType}
+                      onChange={(e) => setEvaluationType(e.target.value)}
+                      style={{ backgroundColor: 'var(--surface-color)', padding: '10px' }}
+                    >
+                      <option value="동료사원 평가">동료사원 평가</option>
+                      <option value="직무능력 평가">직무능력 평가</option>
+                      <option value="다면평가">다면평가</option>
+                    </select>
                   </div>
 
                   <div style={{ display: 'flex', gap: '12px' }}>
@@ -2628,6 +2654,19 @@ function AdminDashboard({ onLogout }) {
               </h3>
               <form onSubmit={handleCreateQuestion} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                 <div className="input-group">
+                  <label className="input-label" style={{ fontSize: '13px' }}>평가 종류</label>
+                  <select
+                    className="input-field"
+                    value={questionEvaluationType}
+                    onChange={(e) => setQuestionEvaluationType(e.target.value)}
+                    style={{ backgroundColor: 'var(--surface-color)', padding: '10px' }}
+                  >
+                    <option value="동료사원 평가">동료사원 평가</option>
+                    <option value="직무능력 평가">직무능력 평가</option>
+                    <option value="다면평가">다면평가</option>
+                  </select>
+                </div>
+                <div className="input-group">
                   <label className="input-label" style={{ fontSize: '13px' }}>문항 제목</label>
                   <input
                     type="text"
@@ -2681,15 +2720,33 @@ function AdminDashboard({ onLogout }) {
 
             {/* 2. 기존 평가 문항 설정 및 편집 카드 */}
             <div className="card" style={{ padding: '20px' }}>
-              <h3 style={{ fontSize: '16px', fontWeight: '700', color: 'var(--text-primary)', marginBottom: '16px', borderLeft: '4px solid var(--success)', paddingLeft: '8px' }}>
-                현재 평가 문항 목록 ({questions.length}개)
-              </h3>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
+                <h3 style={{ fontSize: '16px', fontWeight: '700', color: 'var(--text-primary)', borderLeft: '4px solid var(--success)', paddingLeft: '8px', margin: 0 }}>
+                  현재 평가 문항 목록
+                </h3>
+                {/* 평가 종류 분류 필터 */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '13px', color: 'var(--text-secondary)', fontWeight: '600' }}>평가 종류 필터:</span>
+                  <select
+                    className="input-field"
+                    value={questionFilterType}
+                    onChange={(e) => setQuestionFilterType(e.target.value)}
+                    style={{ padding: '6px 12px', fontSize: '13px', width: 'auto', backgroundColor: '#ffffff' }}
+                  >
+                    <option value="전체">전체 보기</option>
+                    <option value="동료사원 평가">동료사원 평가</option>
+                    <option value="직무능력 평가">직무능력 평가</option>
+                    <option value="다면평가">다면평가</option>
+                  </select>
+                </div>
+              </div>
               
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
                   <thead>
                     <tr style={{ borderBottom: '2px solid var(--border-color)', textAlign: 'left', backgroundColor: '#f8fafc' }}>
                       <th style={{ padding: '10px', width: '70px', color: 'var(--text-secondary)', textAlign: 'center' }}>순서</th>
+                      <th style={{ padding: '10px', width: '110px', color: 'var(--text-secondary)' }}>평가 종류</th>
                       <th style={{ padding: '10px', width: '90px', color: 'var(--text-secondary)' }}>문항 제목</th>
                       <th style={{ padding: '10px', width: '90px', color: 'var(--text-secondary)' }}>유형</th>
                       <th style={{ padding: '10px', color: 'var(--text-secondary)' }}>문항 설명</th>
@@ -2698,20 +2755,42 @@ function AdminDashboard({ onLogout }) {
                     </tr>
                   </thead>
                   <tbody>
-                    {questions.length === 0 ? (
-                      <tr>
-                        <td colSpan="6" style={{ padding: '30px', textAlign: 'center', color: 'var(--text-muted)' }}>
-                          등록된 평가 문항이 없습니다.
-                        </td>
-                      </tr>
-                    ) : (
-                      questions.map((q, index) => {
+                    {(() => {
+                      const filteredList = questions.filter(q => {
+                        if (questionFilterType === '전체') return true;
+                        return (q.evaluation_type || '동료사원 평가') === questionFilterType;
+                      });
+
+                      if (filteredList.length === 0) {
+                        return (
+                          <tr>
+                            <td colSpan="7" style={{ padding: '30px', textAlign: 'center', color: 'var(--text-muted)' }}>
+                              해당 종류의 평가 문항이 없습니다.
+                            </td>
+                          </tr>
+                        );
+                      }
+
+                      return filteredList.map((q) => {
+                        const realIndex = questions.indexOf(q);
                         const isEditing = editingQuestionId === q.id;
                         return (
                           <tr key={q.id} style={{ borderBottom: '1px solid var(--border-color)', opacity: q.is_active ? 1 : 0.6 }}>
                             {isEditing ? (
                               <>
                                 <td style={{ padding: '8px', textAlign: 'center' }}>-</td>
+                                <td style={{ padding: '8px 4px' }}>
+                                  <select
+                                    className="input-field"
+                                    value={editQuestionEvaluationType}
+                                    onChange={(e) => setEditQuestionEvaluationType(e.target.value)}
+                                    style={{ padding: '6px', fontSize: '12px', backgroundColor: '#fff' }}
+                                  >
+                                    <option value="동료사원 평가">동료사원 평가</option>
+                                    <option value="직무능력 평가">직무능력 평가</option>
+                                    <option value="다면평가">다면평가</option>
+                                  </select>
+                                </td>
                                 <td style={{ padding: '8px 4px' }}>
                                   <input
                                     type="text"
@@ -2774,15 +2853,15 @@ function AdminDashboard({ onLogout }) {
                                   <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
                                     <button
                                       type="button"
-                                      onClick={() => handleMoveQuestion(index, 'up')}
-                                      disabled={index === 0}
+                                      onClick={() => handleMoveQuestion(realIndex, 'up')}
+                                      disabled={realIndex === 0}
                                       style={{
                                         border: '1px solid var(--border-color)',
                                         backgroundColor: '#ffffff',
-                                        color: index === 0 ? '#cbd5e1' : 'var(--text-primary)',
+                                        color: realIndex === 0 ? '#cbd5e1' : 'var(--text-primary)',
                                         padding: '2px 6px',
                                         borderRadius: '4px',
-                                        cursor: index === 0 ? 'not-allowed' : 'pointer',
+                                        cursor: realIndex === 0 ? 'not-allowed' : 'pointer',
                                         fontSize: '11px',
                                         fontWeight: 'bold'
                                       }}
@@ -2791,15 +2870,15 @@ function AdminDashboard({ onLogout }) {
                                     </button>
                                     <button
                                       type="button"
-                                      onClick={() => handleMoveQuestion(index, 'down')}
-                                      disabled={index === questions.length - 1}
+                                      onClick={() => handleMoveQuestion(realIndex, 'down')}
+                                      disabled={realIndex === questions.length - 1}
                                       style={{
                                         border: '1px solid var(--border-color)',
                                         backgroundColor: '#ffffff',
-                                        color: index === questions.length - 1 ? '#cbd5e1' : 'var(--text-primary)',
+                                        color: realIndex === questions.length - 1 ? '#cbd5e1' : 'var(--text-primary)',
                                         padding: '2px 6px',
                                         borderRadius: '4px',
-                                        cursor: index === questions.length - 1 ? 'not-allowed' : 'pointer',
+                                        cursor: realIndex === questions.length - 1 ? 'not-allowed' : 'pointer',
                                         fontSize: '11px',
                                         fontWeight: 'bold'
                                       }}
@@ -2808,6 +2887,7 @@ function AdminDashboard({ onLogout }) {
                                     </button>
                                   </div>
                                 </td>
+                                <td style={{ padding: '12px 10px', fontWeight: '700', color: 'var(--primary-color)' }}>{q.evaluation_type || '동료사원 평가'}</td>
                                 <td style={{ padding: '12px 10px', fontWeight: '600' }}>{q.category}</td>
                                 <td style={{ padding: '12px 10px' }}>
                                   <span style={{
@@ -2876,8 +2956,8 @@ function AdminDashboard({ onLogout }) {
                             )}
                           </tr>
                         );
-                      })
-                    )}
+                      });
+                    })()}
                   </tbody>
                 </table>
               </div>

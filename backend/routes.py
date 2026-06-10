@@ -91,9 +91,26 @@ def get_assignments():
 
 @api_bp.route("/evaluations/questions", methods=["GET"])
 def get_questions():
-    """데이터베이스에 등록된 평가 문항 목록을 반환합니다."""
+    """특정 배정 프로젝트의 평가 유형에 맞는 질문 목록을 반환합니다."""
+    assignment_id = request.args.get("assignment_id", type=int)
     conn = db.get_db_connection()
-    rows = conn.execute('SELECT * FROM evaluation_questions WHERE is_active = 1 ORDER BY sort_order ASC, id ASC').fetchall()
+    
+    evaluation_type = '동료사원 평가'
+    if assignment_id is not None:
+        row = conn.execute('''
+            SELECT p.evaluation_type 
+            FROM evaluation_assignments a
+            JOIN evaluation_projects p ON a.project_id = p.id
+            WHERE a.id = ?
+        ''', (assignment_id,)).fetchone()
+        if row:
+            evaluation_type = row['evaluation_type']
+            
+    rows = conn.execute('''
+        SELECT * FROM evaluation_questions 
+        WHERE is_active = 1 AND evaluation_type = ? 
+        ORDER BY sort_order ASC, id ASC
+    ''', (evaluation_type,)).fetchall()
     conn.close()
     return jsonify([dict(row) for row in rows])
 
@@ -403,6 +420,7 @@ def admin_create_assignment():
     evaluator_id = data.get("evaluator_id")
     evaluatee_id = data.get("evaluatee_id")
     project_id = data.get("project_id")
+    evaluation_type = data.get("evaluation_type", "동료사원 평가")
 
     if evaluator_id is None:
         return jsonify({"detail": "평가자 ID가 필요합니다."}), 400
@@ -417,7 +435,7 @@ def admin_create_assignment():
             if evaluator_id == evaluatee_id:
                 return jsonify({"detail": "자기 자신을 평가 대상자로 배정할 수 없습니다."}), 400
                 
-            project_id = db.create_evaluation_project(evaluatee_id)
+            project_id = db.create_evaluation_project(evaluatee_id, evaluation_type)
         
         proj = c.execute('SELECT evaluatee_id FROM evaluation_projects WHERE id = ?', (project_id,)).fetchone()
         if not proj:
@@ -454,6 +472,7 @@ def admin_create_project():
     """관리자용: 새로운 평가 프로젝트를 생성합니다."""
     data = request.get_json() or {}
     evaluatee_id = data.get("evaluatee_id")
+    evaluation_type = data.get("evaluation_type", "동료사원 평가")
     start_date = data.get("start_date")
     end_date = data.get("end_date")
 
@@ -463,6 +482,7 @@ def admin_create_project():
     try:
         project_id = db.create_evaluation_project(
             evaluatee_id,
+            evaluation_type,
             start_date,
             end_date
         )
@@ -662,6 +682,7 @@ def admin_create_question():
     question_sub_text = data.get("question_sub_text", "")
     category = data.get("category")
     is_essay = data.get("is_essay")
+    evaluation_type = data.get("evaluation_type", "동료사원 평가")
 
     if not question_text or is_essay is None or not category:
         return jsonify({"detail": "필수 데이터가 누락되었습니다."}), 400
@@ -674,9 +695,9 @@ def admin_create_question():
         max_order = max_order_row['max_order'] if max_order_row and max_order_row['max_order'] else 0
 
         c.execute('''
-            INSERT INTO evaluation_questions (question_text, question_sub_text, category, is_essay, sort_order, is_active)
-            VALUES (?, ?, ?, ?, ?, 1)
-        ''', (question_text.strip(), question_sub_text.strip() if question_sub_text else "", category.strip(), is_essay, max_order + 1))
+            INSERT INTO evaluation_questions (question_text, question_sub_text, category, is_essay, sort_order, is_active, evaluation_type)
+            VALUES (?, ?, ?, ?, ?, 1, ?)
+        ''', (question_text.strip(), question_sub_text.strip() if question_sub_text else "", category.strip(), is_essay, max_order + 1, evaluation_type))
         conn.commit()
         return jsonify({"success": True, "message": "새로운 평가 문항이 추가되었습니다."})
     except sqlite3.Error as e:
@@ -693,6 +714,7 @@ def admin_update_question(question_id):
     question_sub_text = data.get("question_sub_text", "")
     category = data.get("category")
     is_essay = data.get("is_essay")
+    evaluation_type = data.get("evaluation_type", "동료사원 평가")
 
     if not question_text or is_essay is None or not category:
         return jsonify({"detail": "필수 데이터가 누락되었습니다."}), 400
@@ -707,9 +729,9 @@ def admin_update_question(question_id):
             
         c.execute('''
             UPDATE evaluation_questions
-            SET question_text = ?, question_sub_text = ?, category = ?, is_essay = ?
+            SET question_text = ?, question_sub_text = ?, category = ?, is_essay = ?, evaluation_type = ?
             WHERE id = ?
-        ''', (question_text.strip(), question_sub_text.strip() if question_sub_text else "", category.strip(), is_essay, question_id))
+        ''', (question_text.strip(), question_sub_text.strip() if question_sub_text else "", category.strip(), is_essay, evaluation_type, question_id))
         conn.commit()
         return jsonify({"success": True, "message": "평가 문항이 성공적으로 수정되었습니다."})
     except sqlite3.Error as e:
