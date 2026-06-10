@@ -14,6 +14,44 @@ else:
     DB_PATH = os.path.join(base_dir, "employees.db")
 
 
+def get_position_title(position):
+    """
+    직급(position) 값을 규칙에 맞게 매핑하여 노출용 직급 명칭을 반환합니다.
+    - 직급이 한글인 경우는 그냥 한글 직급 그대로 쓰되, '파견사원', '일반직 사원'은 '사원'으로 변환.
+    - 직급이 영문+숫자 혼합인 경우에는 A1, G5는 사원, G4는 대리, G3는 과장, G2는 차장, G1은 부장으로 변환.
+    - 그 외 영숫자 혼합 직급은 '사원'으로 폴백 처리.
+    - 비어있거나 누락된 경우는 '사원'으로 반환.
+    """
+    if not position:
+        return "사원"
+    
+    pos = position.strip()
+    
+    # 1. 영문+숫자 혼합 매핑 사전
+    eng_num_map = {
+        "A1": "사원",
+        "G5": "사원",
+        "G4": "대리",
+        "G3": "과장",
+        "G2": "차장",
+        "G1": "부장"
+    }
+    
+    pos_upper = pos.upper()
+    if pos_upper in eng_num_map:
+        return eng_num_map[pos_upper]
+        
+    # 영문+숫자 혼합 형태인지 판단 (예: G6, ABC1 등)
+    import re
+    if re.match(r'^[A-Z]+\d+$', pos_upper):
+        return "사원"
+        
+    # 2. 한글 직급 예외 처리
+    if pos in ["파견사원", "일반직 사원", "일반직사원"]:
+        return "사원"
+        
+    return pos
+
 def get_db_connection():
     """데이터베이스 커넥션을 생성하여 반환합니다."""
     conn = sqlite3.connect(DB_PATH, timeout=30)
@@ -362,6 +400,23 @@ def init_db():
 
     # 기존 1~5점 척도 점수를 6~10점 척도로 일괄 업데이트
     c.execute("UPDATE evaluation_answers SET score = score + 5 WHERE score >= 1 AND score <= 5")
+    
+    # 기존 evaluation_projects의 title 컬럼 마이그레이션 (피평가자 실제 직급 반영)
+    try:
+        projects = c.execute('SELECT id, evaluatee_id, evaluation_type FROM evaluation_projects').fetchall()
+        for proj in projects:
+            proj_id = proj['id']
+            ee_id = proj['evaluatee_id']
+            eval_type = proj['evaluation_type'] or '동료사원 평가'
+            
+            emp_row = c.execute('SELECT name, position FROM employees WHERE id = ?', (ee_id,)).fetchone()
+            if emp_row:
+                pos_title = get_position_title(emp_row['position'])
+                new_title = f"{emp_row['name']} {pos_title} {eval_type}"
+                c.execute('UPDATE evaluation_projects SET title = ? WHERE id = ?', (new_title, proj_id))
+    except Exception as e:
+        print("프로젝트 타이틀 직급 마이그레이션 중 오류 발생:", e)
+
     conn.commit()
     conn.close()
     print("Database initialized successfully.")
@@ -534,12 +589,13 @@ def create_evaluation_project(evaluatee_id, evaluation_type="동료사원 평가
     conn = get_db_connection()
     c = conn.cursor()
     
-    emp = c.execute('SELECT name FROM employees WHERE id = ?', (evaluatee_id,)).fetchone()
+    emp = c.execute('SELECT name, position FROM employees WHERE id = ?', (evaluatee_id,)).fetchone()
     if not emp:
         conn.close()
         raise Exception("존재하지 않는 사원입니다.")
     
-    title = f"{emp['name']} 사원 {evaluation_type}"
+    position_title = get_position_title(emp['position'])
+    title = f"{emp['name']} {position_title} {evaluation_type}"
     
     existing = c.execute('''
         SELECT id FROM evaluation_projects 

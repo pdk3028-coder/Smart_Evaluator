@@ -35,4 +35,4 @@ ID: 14, Name: 김태호, Position: '사원'
 ID: 15, Name: 김다솜, Position: '일반직 사원'
 
 --- Existing Evaluation Projects with Evaluatee Positions ---
-Project ID: 6, Title: '박동규 사원 동료평가', EvalType: '동료사원 평가', Evaluatee: 박동규, Position: 'G4'
+Project ID: 6, Title: '박동규 대리 동료사원 평가', EvalType: '동료사원 평가', Evaluatee: 박동규, Position: 'G4'

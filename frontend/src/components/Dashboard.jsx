@@ -1,5 +1,34 @@
 import React, { useState, useEffect } from 'react';
 
+const getPositionTitle = (position) => {
+  if (!position) return '사원';
+  const pos = position.trim();
+  
+  const engNumMap = {
+    'A1': '사원',
+    'G5': '사원',
+    'G4': '대리',
+    'G3': '과장',
+    'G2': '차장',
+    'G1': '부장'
+  };
+  
+  const posUpper = pos.toUpperCase();
+  if (engNumMap[posUpper] !== undefined) {
+    return engNumMap[posUpper];
+  }
+  
+  if (/^[A-Z]+\d+$/.test(posUpper)) {
+    return '사원';
+  }
+  
+  if (['파견사원', '일반직 사원', '일반직사원'].includes(pos)) {
+    return '사원';
+  }
+  
+  return pos;
+};
+
 function Dashboard({ user, onSelectAssignment, onLogout }) {
   const [assignments, setAssignments] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -120,7 +149,7 @@ function Dashboard({ user, onSelectAssignment, onLogout }) {
                             display: 'block',
                             maxWidth: '100%'
                           }}>
-                            {item.project_title || `${item.name} 사원 동료평가`}
+                            {item.project_title || `${item.name} ${getPositionTitle(item.position)} ${item.evaluation_type || '동료평가'}`}
                           </span>
                         </div>
                         <p style={{ fontSize: '13px', color: 'var(--text-muted)', margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
