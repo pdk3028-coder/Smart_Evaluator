@@ -1,40 +1,38 @@
---- evaluation_projects Table SQL ---
-CREATE TABLE "evaluation_projects" (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    evaluatee_id INTEGER NOT NULL,
-                    title TEXT NOT NULL,
-                    status TEXT DEFAULT 'active',
-                    start_date TEXT,
-                    end_date TEXT,
-                    evaluation_type TEXT DEFAULT '동료사원 평가',
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (evaluatee_id) REFERENCES employees (id) ON DELETE CASCADE,
-                    UNIQUE(evaluatee_id, evaluation_type)
-                )
+--- Unique Position values in employees ---
+Position: 'G3'
+Position: '부사장'
+Position: '상무'
+Position: 'G1'
+Position: 'G2'
+Position: 'G4'
+Position: '차석'
+Position: '주임'
+Position: '사원'
+Position: '일반직 사원'
+Position: '계약사원'
+Position: '계장'
+Position: '파견사원'
+Position: '이사보'
+Position: 'G5'
+Position: 'A1'
+Position: '인턴'
 
---- evaluation_questions Table SQL ---
-CREATE TABLE evaluation_questions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            question_text TEXT NOT NULL,
-            category TEXT NOT NULL,
-            is_essay INTEGER DEFAULT 0,  -- 0: 객관식(5점 척도), 1: 주관식(서술형)
-            is_active INTEGER DEFAULT 1,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        , sort_order INTEGER DEFAULT 0, question_sub_text TEXT DEFAULT '', evaluation_type TEXT DEFAULT '동료사원 평가')
+--- Sample Employees (Top 15) ---
+ID: 1, Name: 김홍권, Position: 'G3'
+ID: 2, Name: 황원제, Position: '부사장'
+ID: 3, Name: 이종무, Position: '상무'
+ID: 4, Name: 김건민, Position: 'G1'
+ID: 5, Name: 이용근, Position: 'G1'
+ID: 6, Name: 김동호, Position: 'G2'
+ID: 7, Name: 정재원, Position: 'G3'
+ID: 8, Name: 채승우, Position: 'G4'
+ID: 9, Name: 김한길, Position: 'G4'
+ID: 10, Name: 김도현, Position: 'G4'
+ID: 11, Name: 김영호, Position: '차석'
+ID: 12, Name: 최정수, Position: '주임'
+ID: 13, Name: 김동우, Position: '사원'
+ID: 14, Name: 김태호, Position: '사원'
+ID: 15, Name: 김다솜, Position: '일반직 사원'
 
---- Project Data (Top 5) ---
-{'id': 6, 'evaluatee_id': 97, 'title': '박동규 사원 동료평가', 'evaluation_type': '동료사원 평가'}
-  repr(title): '박동규 사원 동료평가'
-  repr(evaluation_type): '동료사원 평가'
-
---- Questions Data (Top 5) ---
-{'id': 14, 'question_text': '목표량 달성을 위한 기능의 숙달 정도 및 완성도', 'category': '숙련도', 'evaluation_type': '동료사원 평가'}
-  repr(question_text): '목표량 달성을 위한 기능의 숙달 정도 및 완성도'
-{'id': 15, 'question_text': '작업표준에 의거 작업이행 및 품질향상을 위한 노력 정도', 'category': '표준작업 및 품질향상', 'evaluation_type': '동료사원 평가'}
-  repr(question_text): '작업표준에 의거 작업이행 및 품질향상을 위한 노력 정도'
-{'id': 16, 'question_text': '장비에 대한 이해도 및 활용도 (장비운용, Setting)', 'category': '장비운용 능력', 'evaluation_type': '동료사원 평가'}
-  repr(question_text): '장비에 대한 이해도 및 활용도 (장비운용, Setting)'
-{'id': 17, 'question_text': '업무상 지식 보유 및 응용능력 수준 정도', 'category': '기능수준', 'evaluation_type': '동료사원 평가'}
-  repr(question_text): '업무상 지식 보유 및 응용능력 수준 정도'
-{'id': 18, 'question_text': '생산 공정의 낭비요소 개선 등 업무관련 비용 절감의식 정도', 'category': '비용절감', 'evaluation_type': '동료사원 평가'}
-  repr(question_text): '생산 공정의 낭비요소 개선 등 업무관련 비용 절감의식 정도'
+--- Existing Evaluation Projects with Evaluatee Positions ---
+Project ID: 6, Title: '박동규 사원 동료평가', EvalType: '동료사원 평가', Evaluatee: 박동규, Position: 'G4'
