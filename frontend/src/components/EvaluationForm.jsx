@@ -7,6 +7,8 @@ function EvaluationForm({ user, assignment, onBack, onSubmitSuccess }) {
   const [submitLoading, setSubmitLoading] = useState(false);
   const [error, setError] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
+  const [showAlertModal, setShowAlertModal] = useState(false);
+  const [alertModalMsg, setAlertModalMsg] = useState('');
   
   const [showSignatureModal, setShowSignatureModal] = useState(false);
   const canvasRef = React.useRef(null);
@@ -199,12 +201,14 @@ function EvaluationForm({ user, assignment, onBack, onSubmitSuccess }) {
     let isValid = true;
     for (const q of questions) {
       if (!q.is_essay && (answers[q.id]?.score === null || answers[q.id]?.score === undefined)) {
-        setErrorMsg('모든 객관식 평가 문항을 평가해 주세요.');
+        setAlertModalMsg('모든 객관식 평가 문항을 평가해 주세요.');
+        setShowAlertModal(true);
         isValid = false;
         break;
       }
       if (q.is_essay && (!answers[q.id]?.answer_text || !answers[q.id].answer_text.trim())) {
-        setErrorMsg('모든 주관식 의견란을 입력해 주세요.');
+        setAlertModalMsg('모든 주관식 의견란을 입력해 주세요.');
+        setShowAlertModal(true);
         isValid = false;
         break;
       }
@@ -496,6 +500,66 @@ function EvaluationForm({ user, assignment, onBack, onSubmitSuccess }) {
                 서명 완료 및 제출
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 경고 알림 모달 팝업 */}
+      {showAlertModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.6)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 1100,
+          backdropFilter: 'blur(4px)'
+        }}>
+          <div style={{
+            backgroundColor: 'var(--surface-color)',
+            padding: '24px',
+            borderRadius: '16px',
+            width: '85%',
+            maxWidth: '380px',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.15), 0 10px 10px -5px rgba(0, 0, 0, 0.05)',
+            border: '1px solid var(--border-color)',
+            textAlign: 'center',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '16px'
+          }}>
+            <div>
+              <div style={{
+                width: '48px',
+                height: '48px',
+                borderRadius: '50%',
+                backgroundColor: '#fee2e2',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                margin: '0 auto 12px auto'
+              }}>
+                <span style={{ color: '#ef4444', fontSize: '24px', fontWeight: '800' }}>!</span>
+              </div>
+              <h3 style={{ fontSize: '18px', fontWeight: '700', color: 'var(--text-primary)', marginBottom: '8px' }}>
+                평가 항목 누락
+              </h3>
+              <p style={{ fontSize: '14px', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
+                {alertModalMsg}
+              </p>
+            </div>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => setShowAlertModal(false)}
+              style={{ padding: '10px', fontSize: '14px', fontWeight: '700' }}
+            >
+              확인
+            </button>
           </div>
         </div>
       )}
