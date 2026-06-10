@@ -104,6 +104,12 @@ function AdminDashboard({ onLogout }) {
   const [editQuestionEvaluationType, setEditQuestionEvaluationType] = useState('동료사원 평가');
   const [questionFilterType, setQuestionFilterType] = useState('전체');
 
+  // 동적 평가 종류 상태
+  const [evaluationTypes, setEvaluationTypes] = useState(['동료사원 평가', '직무능력 평가', '다면평가']);
+  const [newEvalTypeName, setNewEvalTypeName] = useState('');
+  const [evalTypeSuccess, setEvalTypeSuccess] = useState('');
+  const [evalTypeError, setEvalTypeError] = useState('');
+
   // 인라인 기간 수정 관련 상태 및 함수
   const [editingProjectId, setEditingProjectId] = useState(null);
   const [editStartDate, setEditStartDate] = useState('');
@@ -216,15 +222,16 @@ function AdminDashboard({ onLogout }) {
   // 사원 목록, 프로젝트 목록, 배정 현황 및 업로드 시각 가져오기
   const fetchData = async () => {
     try {
-      const [empRes, projRes, assignRes, timeRes, qRes] = await Promise.all([
+      const [empRes, projRes, assignRes, timeRes, qRes, typeRes] = await Promise.all([
         fetch('/api/admin/employees'),
         fetch('/api/admin/projects'),
         fetch('/api/admin/assignments'),
         fetch('/api/admin/last-upload-time'),
-        fetch('/api/admin/questions')
+        fetch('/api/admin/questions'),
+        fetch('/api/evaluation-types')
       ]);
 
-      if (!empRes.ok || !projRes.ok || !assignRes.ok || !timeRes.ok || !qRes.ok) {
+      if (!empRes.ok || !projRes.ok || !assignRes.ok || !timeRes.ok || !qRes.ok || !typeRes.ok) {
         throw new Error('데이터를 가져오는데 실패했습니다.');
       }
 
@@ -233,12 +240,14 @@ function AdminDashboard({ onLogout }) {
       const assignData = await assignRes.json();
       const timeData = await timeRes.json();
       const qData = await qRes.json();
+      const typeData = await typeRes.json();
 
       setEmployees(empData);
       setProjects(projData);
       setAssignments(assignData);
       setLastUploadTime(timeData.last_upload_time);
       setQuestions(qData);
+      setEvaluationTypes(typeData);
     } catch (err) {
       console.error(err);
     } finally {
@@ -775,10 +784,76 @@ function AdminDashboard({ onLogout }) {
       setProjCreateSuccess(data.message);
       setProjectEvaluateeId('');
       setEvaluateeSearchText('');
-      setEvaluationType('동료사원 평가');
+      setEvaluationType(evaluationTypes[0] || '동료사원 평가');
       fetchData();
     } catch (err) {
       setProjCreateError(err.message);
+    }
+  };
+
+  // 평가 종류 추가 핸들러
+  const handleAddEvalType = async (e) => {
+    e.preventDefault();
+    setEvalTypeError('');
+    setEvalTypeSuccess('');
+
+    if (!newEvalTypeName || !newEvalTypeName.trim()) {
+      setEvalTypeError('평가 종류 이름을 입력해 주세요.');
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/admin/evaluation-types', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: newEvalTypeName.trim()
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.detail || '평가 종류 추가에 실패했습니다.');
+      }
+
+      setEvalTypeSuccess(data.message || '평가 종류가 추가되었습니다.');
+      setNewEvalTypeName('');
+      fetchData();
+    } catch (err) {
+      setEvalTypeError(err.message);
+    }
+  };
+
+  // 평가 종류 삭제 핸들러
+  const handleDeleteEvalType = async (name) => {
+    if (!window.confirm(`'${name}' 평가 종류를 정말 삭제하시겠습니까?\n주의: 기존에 이 종류로 생성된 프로젝트나 문항이 있으면 삭제할 수 없습니다.`)) {
+      return;
+    }
+    setEvalTypeError('');
+    setEvalTypeSuccess('');
+
+    try {
+      const response = await fetch('/api/admin/evaluation-types', {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: name
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.detail || '평가 종류 삭제에 실패했습니다.');
+      }
+
+      setEvalTypeSuccess(data.message || '평가 종류가 삭제되었습니다.');
+      fetchData();
+    } catch (err) {
+      setEvalTypeError(err.message);
     }
   };
 
@@ -1152,7 +1227,7 @@ function AdminDashboard({ onLogout }) {
       setQuestionSubText('');
       setQuestionCategory('');
       setQuestionIsEssay(0);
-      setQuestionEvaluationType('동료사원 평가');
+      setQuestionEvaluationType(evaluationTypes[0] || '동료사원 평가');
       fetchData();
     } catch (err) {
       alert(err.message);
@@ -1166,7 +1241,7 @@ function AdminDashboard({ onLogout }) {
     setEditQuestionSubText(q.question_sub_text || '');
     setEditQuestionCategory(q.category);
     setEditQuestionIsEssay(q.is_essay);
-    setEditQuestionEvaluationType(q.evaluation_type || '동료사원 평가');
+    setEditQuestionEvaluationType(q.evaluation_type || (evaluationTypes[0] || '동료사원 평가'));
   };
 
   // 평가 문항 수정 저장
@@ -1700,9 +1775,9 @@ function AdminDashboard({ onLogout }) {
                       onChange={(e) => setEvaluationType(e.target.value)}
                       style={{ backgroundColor: 'var(--surface-color)', padding: '10px' }}
                     >
-                      <option value="동료사원 평가">동료사원 평가</option>
-                      <option value="직무능력 평가">직무능력 평가</option>
-                      <option value="다면평가">다면평가</option>
+                      {evaluationTypes.map((t) => (
+                        <option key={t} value={t}>{t}</option>
+                      ))}
                     </select>
                   </div>
 
@@ -1735,6 +1810,82 @@ function AdminDashboard({ onLogout }) {
                     평가 프로젝트 생성
                   </button>
                 </form>
+              </div>
+
+              {/* 1-2. 평가 종류 관리 */}
+              <div className="card" style={{ padding: '20px' }}>
+                <h3 style={{ fontSize: '16px', fontWeight: '700', color: 'var(--text-primary)', marginBottom: '14px', borderLeft: '4px solid var(--primary-color)', paddingLeft: '8px' }}>
+                  평가 종류 관리
+                </h3>
+
+                {evalTypeSuccess && (
+                  <div className="alert alert-success" style={{ marginBottom: '12px' }}>
+                    <span>{evalTypeSuccess}</span>
+                  </div>
+                )}
+                {evalTypeError && (
+                  <div className="alert alert-error" style={{ marginBottom: '12px' }}>
+                    <span>{evalTypeError}</span>
+                  </div>
+                )}
+
+                <form onSubmit={handleAddEvalType} style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+                  <input
+                    type="text"
+                    className="input-field"
+                    placeholder="새 평가 종류 이름"
+                    value={newEvalTypeName}
+                    onChange={(e) => setNewEvalTypeName(e.target.value)}
+                    style={{ flex: 1, padding: '8px 10px', fontSize: '13px' }}
+                    required
+                  />
+                  <button
+                    type="submit"
+                    className="btn btn-primary"
+                    style={{ padding: '8px 16px', fontSize: '13px', whiteSpace: 'nowrap' }}
+                  >
+                    추가
+                  </button>
+                </form>
+
+                <div style={{
+                  maxHeight: '150px',
+                  overflowY: 'auto',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: 'var(--radius-sm)',
+                  backgroundColor: '#f8fafc'
+                }}>
+                  {evaluationTypes.map((t) => (
+                    <div
+                      key={t}
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        padding: '8px 12px',
+                        borderBottom: '1px solid #e2e8f0',
+                        fontSize: '13px'
+                      }}
+                    >
+                      <span style={{ fontWeight: '500', color: 'var(--text-primary)' }}>{t}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteEvalType(t)}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: '#ef4444',
+                          cursor: 'pointer',
+                          fontSize: '12px',
+                          fontWeight: '600',
+                          padding: '2px 4px'
+                        }}
+                      >
+                        삭제
+                      </button>
+                    </div>
+                  ))}
+                </div>
               </div>
 
               {/* 2. 평가 관계 배정 (투 트랙 운영) */}
@@ -2661,9 +2812,9 @@ function AdminDashboard({ onLogout }) {
                     onChange={(e) => setQuestionEvaluationType(e.target.value)}
                     style={{ backgroundColor: 'var(--surface-color)', padding: '10px' }}
                   >
-                    <option value="동료사원 평가">동료사원 평가</option>
-                    <option value="직무능력 평가">직무능력 평가</option>
-                    <option value="다면평가">다면평가</option>
+                    {evaluationTypes.map((t) => (
+                      <option key={t} value={t}>{t}</option>
+                    ))}
                   </select>
                 </div>
                 <div className="input-group">
@@ -2734,9 +2885,9 @@ function AdminDashboard({ onLogout }) {
                     style={{ padding: '6px 12px', fontSize: '13px', width: 'auto', backgroundColor: '#ffffff' }}
                   >
                     <option value="전체">전체 보기</option>
-                    <option value="동료사원 평가">동료사원 평가</option>
-                    <option value="직무능력 평가">직무능력 평가</option>
-                    <option value="다면평가">다면평가</option>
+                    {evaluationTypes.map((t) => (
+                      <option key={t} value={t}>{t}</option>
+                    ))}
                   </select>
                 </div>
               </div>
@@ -2786,9 +2937,9 @@ function AdminDashboard({ onLogout }) {
                                     onChange={(e) => setEditQuestionEvaluationType(e.target.value)}
                                     style={{ padding: '6px', fontSize: '12px', backgroundColor: '#fff' }}
                                   >
-                                    <option value="동료사원 평가">동료사원 평가</option>
-                                    <option value="직무능력 평가">직무능력 평가</option>
-                                    <option value="다면평가">다면평가</option>
+                                    {evaluationTypes.map((t) => (
+                                      <option key={t} value={t}>{t}</option>
+                                    ))}
                                   </select>
                                 </td>
                                 <td style={{ padding: '8px 4px' }}>

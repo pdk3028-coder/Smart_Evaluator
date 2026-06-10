@@ -53,6 +53,41 @@ def login():
     else:
         return jsonify({"detail": "등록되지 않은 사번입니다."}), 404
 
+@api_bp.route("/evaluation-types", methods=["GET"])
+def get_evaluation_types():
+    """모든 평가 종류 목록을 반환합니다."""
+    try:
+        types = db.get_all_evaluation_types()
+        return jsonify(types)
+    except Exception as e:
+        return jsonify({"detail": str(e)}), 500
+
+@api_bp.route("/admin/evaluation-types", methods=["POST"])
+def create_evaluation_type():
+    """새로운 평가 종류를 추가합니다."""
+    data = request.get_json() or {}
+    name = data.get("name")
+    if not name:
+        return jsonify({"detail": "평가 종류 이름이 필요합니다."}), 400
+    try:
+        db.add_evaluation_type(name)
+        return jsonify({"success": True, "message": "평가 종류가 추가되었습니다."})
+    except Exception as e:
+        return jsonify({"detail": str(e)}), 400
+
+@api_bp.route("/admin/evaluation-types", methods=["DELETE"])
+def delete_evaluation_type_api():
+    """평가 종류를 삭제합니다."""
+    data = request.get_json() or {}
+    name = data.get("name")
+    if not name:
+        return jsonify({"detail": "삭제할 평가 종류 이름이 필요합니다."}), 400
+    try:
+        db.delete_evaluation_type(name)
+        return jsonify({"success": True, "message": "평가 종류가 삭제되었습니다."})
+    except Exception as e:
+        return jsonify({"detail": str(e)}), 400
+
 @api_bp.route("/evaluations/assignments", methods=["GET"])
 def get_assignments():
     """로그인한 평가자에게 지정된 평가 프로젝트(피평가자) 목록을 반환합니다. 평가 기간에 해당하는 프로젝트만 조회됩니다."""

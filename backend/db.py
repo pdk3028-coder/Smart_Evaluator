@@ -52,6 +52,60 @@ def get_position_title(position):
         
     return pos
 
+def get_all_evaluation_types():
+    """등록된 모든 평가 종류의 이름을 리스트로 반환합니다."""
+    conn = get_db_connection()
+    rows = conn.execute('SELECT name FROM evaluation_types ORDER BY id ASC').fetchall()
+    conn.close()
+    return [row['name'] for row in rows]
+
+def add_evaluation_type(name):
+    """신규 평가 종류를 추가합니다."""
+    if not name or not name.strip():
+        raise Exception("평가 종류 이름이 올바르지 않습니다.")
+    
+    name = name.strip()
+    conn = get_db_connection()
+    c = conn.cursor()
+    
+    # 중복 체크
+    exists = c.execute('SELECT id FROM evaluation_types WHERE name = ?', (name,)).fetchone()
+    if exists:
+        conn.close()
+        raise Exception("이미 존재하는 평가 종류입니다.")
+        
+    c.execute('INSERT INTO evaluation_types (name) VALUES (?)', (name,))
+    conn.commit()
+    conn.close()
+    return True
+
+def delete_evaluation_type(name):
+    """평가 종류를 삭제합니다. 단, 해당 평가 종류를 사용 중인 프로젝트나 질문이 있으면 삭제할 수 없습니다."""
+    if not name:
+        raise Exception("삭제할 평가 종류 이름이 필요합니다.")
+        
+    name = name.strip()
+    conn = get_db_connection()
+    c = conn.cursor()
+    
+    # 1. evaluation_projects 사용 여부 체크
+    proj_exists = c.execute('SELECT id FROM evaluation_projects WHERE evaluation_type = ?', (name,)).fetchone()
+    if proj_exists:
+        conn.close()
+        raise Exception("해당 평가 종류를 사용하는 기존 평가 프로젝트가 존재하므로 삭제할 수 없습니다.")
+        
+    # 2. evaluation_questions 사용 여부 체크
+    q_exists = c.execute('SELECT id FROM evaluation_questions WHERE evaluation_type = ?', (name,)).fetchone()
+    if q_exists:
+        conn.close()
+        raise Exception("해당 평가 종류를 사용하는 등록된 평가 문항이 존재하므로 삭제할 수 없습니다.")
+        
+    # 삭제 수행
+    c.execute('DELETE FROM evaluation_types WHERE name = ?', (name,))
+    conn.commit()
+    conn.close()
+    return True
+
 def get_db_connection():
     """데이터베이스 커넥션을 생성하여 반환합니다."""
     conn = sqlite3.connect(DB_PATH, timeout=30)
@@ -105,6 +159,19 @@ def init_db():
             value TEXT NOT NULL
         )
     ''')
+
+    # 3-2. evaluation_types 테이블 생성 (동적 평가 종류 관리)
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS evaluation_types (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
+    # 기초 평가 종류 데이터 추가
+    for t_name in ['동료사원 평가', '직무능력 평가', '다면평가']:
+        c.execute("INSERT OR IGNORE INTO evaluation_types (name) VALUES (?)", (t_name,))
 
     # 4. evaluation_questions 테이블 생성 (평가 문항)
     c.execute('''
