@@ -9,6 +9,7 @@ function EvaluationForm({ user, assignment, onBack, onSubmitSuccess }) {
   const [errorMsg, setErrorMsg] = useState('');
   const [showAlertModal, setShowAlertModal] = useState(false);
   const [alertModalMsg, setAlertModalMsg] = useState('');
+  const [showNoticeModal, setShowNoticeModal] = useState(true);
   
   const [showSignatureModal, setShowSignatureModal] = useState(false);
   const canvasRef = React.useRef(null);
@@ -559,6 +560,77 @@ function EvaluationForm({ user, assignment, onBack, onSubmitSuccess }) {
               style={{ padding: '10px', fontSize: '14px', fontWeight: '700' }}
             >
               확인
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* 동료평가 안내문 모달 팝업 */}
+      {showNoticeModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.6)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 1200,
+          backdropFilter: 'blur(4px)'
+        }}>
+          <div style={{
+            backgroundColor: 'var(--surface-color)',
+            padding: '24px',
+            borderRadius: '16px',
+            width: '90%',
+            maxWidth: '440px',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.15), 0 10px 10px -5px rgba(0, 0, 0, 0.05)',
+            border: '1px solid var(--border-color)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '16px'
+          }}>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{
+                width: '48px',
+                height: '48px',
+                borderRadius: '50%',
+                backgroundColor: 'var(--primary-light)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                margin: '0 auto 12px auto'
+              }}>
+                <span style={{ color: 'var(--primary-color)', fontSize: '24px', fontWeight: '800' }}>i</span>
+              </div>
+              <h3 style={{ fontSize: '18px', fontWeight: '700', color: 'var(--text-primary)', marginBottom: '12px' }}>
+                신뢰할 수 있는 동료평가를 위한 안내
+              </h3>
+              <div style={{ 
+                fontSize: '13px', 
+                color: 'var(--text-secondary)', 
+                lineHeight: '1.6', 
+                textAlign: 'left',
+                backgroundColor: '#f8fafc',
+                padding: '16px',
+                borderRadius: '8px',
+                border: '1px solid var(--border-color)',
+                whiteSpace: 'pre-wrap'
+              }}>
+                동료평가는 함께 일하는 팀원들의 역량을 객관적으로 확인하고, 우리 조직의 기준을 지키기 위한 가장 중요한 과정입니다.{"\n\n"}
+                동료에 대한 온정에 치우친 평가는 당장의 배려처럼 보일 수 있으나, 결과적으로는 부적격한 인원을 검증하지 못해 성실히 기여하는 다른 팀원들과 조직 전체에 큰 부담을 남기게 됩니다.{"\n\n"}
+                동료와 회사 모두의 건강한 성장을 위해, 가감 없는 솔직함과 객관적인 시선으로 평가에 임해 주시기를 간곡히 부탁드립니다. 작성해 주신 평가는 철저히 익명과 비밀이 보장됩니다.
+              </div>
+            </div>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => setShowNoticeModal(false)}
+              style={{ padding: '12px', fontSize: '14px', fontWeight: '700', cursor: 'pointer' }}
+            >
+              객관적으로 평가에 임하겠습니다
             </button>
           </div>
         </div>
