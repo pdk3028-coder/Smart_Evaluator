@@ -17,6 +17,11 @@ function AdminDashboard({ onLogout }) {
   const [editEmpPosition, setEditEmpPosition] = useState('');
   const [editEmpPhone, setEditEmpPhone] = useState('');
   const [editEmployeeError, setEditEmployeeError] = useState('');
+
+  // 사원 정보 일괄 초기화용 상태값
+  const [showResetConfirmModal, setShowResetConfirmModal] = useState(false);
+  const [resetConfirmText, setResetConfirmText] = useState('');
+  const [resetError, setResetError] = useState('');
   
   // 아코디언 개폐 및 필터용 상태값 추가
   const [expandedProjectIds, setExpandedProjectIds] = useState([]);
@@ -420,6 +425,31 @@ function AdminDashboard({ onLogout }) {
       fetchData();
     } catch (err) {
       setEditEmployeeError(err.message);
+    }
+  };
+
+  // 사원 정보 및 평가 데이터 전체 초기화 처리
+  const handleResetEmployees = async (e) => {
+    e.preventDefault();
+    setResetError('');
+    if (resetConfirmText !== '사원정보를 전체 삭제합니다') {
+      setResetError('확인 문구가 정확하지 않습니다.');
+      return;
+    }
+    try {
+      const response = await fetch('/api/admin/employees/reset', {
+        method: 'POST',
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.detail || '사원 정보 초기화에 실패했습니다.');
+      }
+      alert('모든 사원 정보 및 평가 데이터가 성공적으로 초기화되었습니다.');
+      setShowResetConfirmModal(false);
+      setResetConfirmText('');
+      fetchData();
+    } catch (err) {
+      setResetError(err.message);
     }
   };
 
@@ -1546,6 +1576,18 @@ function AdminDashboard({ onLogout }) {
                   </div>
                   <button className="btn btn-secondary" type="submit" style={{ padding: '10px', fontSize: '14px' }}>
                     엑셀 업로드 반영
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-danger"
+                    onClick={() => {
+                      setResetConfirmText('');
+                      setResetError('');
+                      setShowResetConfirmModal(true);
+                    }}
+                    style={{ padding: '10px', fontSize: '14px', marginTop: '6px' }}
+                  >
+                    전체 사원 정보 초기화
                   </button>
                 </form>
               </div>
@@ -3359,6 +3401,100 @@ function AdminDashboard({ onLogout }) {
                   style={{ flex: 2, padding: '10px', fontSize: '13px', fontWeight: '700' }}
                 >
                   변경사항 저장
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 사원 정보 전체 초기화 모달 */}
+      {showResetConfirmModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.6)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 1150,
+          backdropFilter: 'blur(4px)'
+        }}>
+          <div style={{
+            backgroundColor: 'var(--surface-color)',
+            padding: '24px',
+            borderRadius: '16px',
+            width: '90%',
+            maxWidth: '440px',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.15), 0 10px 10px -5px rgba(0, 0, 0, 0.05)',
+            border: '1px solid var(--border-color)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '16px'
+          }}>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{
+                width: '48px',
+                height: '48px',
+                borderRadius: '50%',
+                backgroundColor: '#fee2e2',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                margin: '0 auto 12px auto'
+              }}>
+                <span style={{ color: '#ef4444', fontSize: '24px', fontWeight: '800' }}>!</span>
+              </div>
+              <h3 style={{ fontSize: '18px', fontWeight: '700', color: 'var(--text-primary)', marginBottom: '8px' }}>
+                전체 데이터 영구 삭제 경고
+              </h3>
+              <p style={{ fontSize: '13px', color: '#dc2626', fontWeight: '600', lineHeight: '1.5', marginBottom: '8px' }}>
+                주의: 모든 사원 정보와 함께, 생성된 평가 프로젝트, 배정 관계 및 기 작성된 모든 동료평가 답변 결과와 서명이 완전히 영구 삭제됩니다.
+              </p>
+              <p style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
+                삭제를 원하시면 아래의 텍스트를 정확하게 입력해 주세요.<br />
+                <strong>사원정보를 전체 삭제합니다</strong>
+              </p>
+            </div>
+
+            {resetError && (
+              <div className="alert alert-error" style={{ fontSize: '12px', padding: '10px' }}>
+                <span>{resetError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleResetEmployees} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div className="input-group">
+                <input
+                  type="text"
+                  className="input-field"
+                  placeholder="위 문구를 그대로 입력해 주세요"
+                  value={resetConfirmText}
+                  onChange={(e) => setResetConfirmText(e.target.value)}
+                  style={{ fontSize: '13px', padding: '8px 12px', textAlign: 'center' }}
+                  required
+                />
+              </div>
+
+              <div style={{ display: 'flex', gap: '10px', marginTop: '12px' }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => setShowResetConfirmModal(false)}
+                  style={{ flex: 1, padding: '10px', fontSize: '13px', fontWeight: '600' }}
+                >
+                  취소
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-danger"
+                  disabled={resetConfirmText !== '사원정보를 전체 삭제합니다'}
+                  style={{ flex: 2, padding: '10px', fontSize: '13px', fontWeight: '700' }}
+                >
+                  데이터베이스 초기화 실행
                 </button>
               </div>
             </form>

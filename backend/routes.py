@@ -363,6 +363,14 @@ def admin_update_employee(emp_id):
         return jsonify({"detail": msg}), 400
     return jsonify({"success": True, "message": msg})
 
+@api_bp.route("/admin/employees/reset", methods=["POST"])
+def admin_reset_employees():
+    """관리자용: 모든 사원 정보 및 관련 평가 데이터를 일괄 초기화합니다."""
+    success, msg = db.delete_all_employees()
+    if not success:
+        return jsonify({"detail": msg}), 500
+    return jsonify({"success": True, "message": msg})
+
 @api_bp.route("/admin/results/export", methods=["GET"])
 def admin_export_results():
     """관리자용: 전체 평가 결과를 피벗 테이블 형식의 Excel 파일로 내보냅니다."""

@@ -958,6 +958,22 @@ def update_employee_info(emp_id, name, team_name, position, phone):
     finally:
         conn.close()
 
+def delete_all_employees():
+    """모든 임직원 정보를 삭제합니다. ON DELETE CASCADE 제약 조건에 의해 연쇄적으로 평가 데이터도 초기화됩니다."""
+    conn = get_db_connection()
+    c = conn.cursor()
+    try:
+        c.execute('DELETE FROM employees')
+        # 업로드 일시 기록도 초기화
+        c.execute("INSERT OR REPLACE INTO system_settings (key, value) VALUES ('last_upload_time', '')")
+        conn.commit()
+        return True, "모든 사원 정보 및 관련 평가 데이터가 성공적으로 초기화되었습니다."
+    except Exception as e:
+        conn.rollback()
+        return False, str(e)
+    finally:
+        conn.close()
+
 if __name__ == '__main__':
     # 로컬에서 데이터베이스 테이블 생성 테스트 진행
     init_db()
