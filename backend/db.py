@@ -974,6 +974,25 @@ def delete_all_employees():
     finally:
         conn.close()
 
+def update_privacy_agreement(emp_id):
+    """사원의 개인정보 수집 및 이용 동의 시각을 현재 시각으로 기록합니다."""
+    conn = get_db_connection()
+    c = conn.cursor()
+    try:
+        now = datetime.now()
+        c.execute('''
+            UPDATE employees
+            SET privacy_agreed = 1, privacy_agreed_at = ?
+            WHERE emp_id = ?
+        ''', (now, emp_id))
+        conn.commit()
+        return True
+    except Exception as e:
+        conn.rollback()
+        return False
+    finally:
+        conn.close()
+
 if __name__ == '__main__':
     # 로컬에서 데이터베이스 테이블 생성 테스트 진행
     init_db()

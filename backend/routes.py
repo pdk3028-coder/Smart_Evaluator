@@ -42,6 +42,9 @@ def login():
     # 일반 임직원 로그인 처리
     user = db.get_employee_by_emp_id(emp_id)
     if user:
+        # 로그인 시마다 개인정보 동의 일시 기록 갱신
+        db.update_privacy_agreement(emp_id)
+        
         return jsonify({
             "success": True,
             "is_admin": False,
