@@ -8,6 +8,15 @@ function AdminDashboard({ onLogout }) {
   const [projects, setProjects] = useState([]);
   const [assignments, setAssignments] = useState([]);
   const [lastUploadTime, setLastUploadTime] = useState('로딩 중...');
+
+  // 사원 정보 수정용 상태값
+  const [showEditEmployeeModal, setShowEditEmployeeModal] = useState(false);
+  const [editingEmployee, setEditingEmployee] = useState(null);
+  const [editEmpName, setEditEmpName] = useState('');
+  const [editEmpTeam, setEditEmpTeam] = useState('');
+  const [editEmpPosition, setEditEmpPosition] = useState('');
+  const [editEmpPhone, setEditEmpPhone] = useState('');
+  const [editEmployeeError, setEditEmployeeError] = useState('');
   
   // 아코디언 개폐 및 필터용 상태값 추가
   const [expandedProjectIds, setExpandedProjectIds] = useState([]);
@@ -365,6 +374,52 @@ function AdminDashboard({ onLogout }) {
       fetchData();
     } catch (err) {
       setEmpCreateError(err.message);
+    }
+  };
+
+  // 사원 정보 수정 모달 오픈
+  const handleOpenEditEmployeeModal = (emp) => {
+    setEditingEmployee(emp);
+    setEditEmpName(emp.name);
+    setEditEmpTeam(emp.team_name || '');
+    setEditEmpPosition(emp.position || '');
+    setEditEmpPhone(emp.phone || '');
+    setEditEmployeeError('');
+    setShowEditEmployeeModal(true);
+  };
+
+  // 사원 정보 수정 처리
+  const handleUpdateEmployeeSubmit = async (e) => {
+    e.preventDefault();
+    setEditEmployeeError('');
+    if (!editEmpName.trim()) {
+      setEditEmployeeError('성명은 필수 입력 항목입니다.');
+      return;
+    }
+    try {
+      const response = await fetch(`/api/admin/employees/${editingEmployee.emp_id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: editEmpName.trim(),
+          team_name: editEmpTeam.trim(),
+          position: editEmpPosition.trim(),
+          phone: editEmpPhone.trim(),
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.detail || '사원 정보 수정에 실패했습니다.');
+      }
+
+      alert('사원 정보가 수정되었습니다.');
+      setShowEditEmployeeModal(false);
+      fetchData();
+    } catch (err) {
+      setEditEmployeeError(err.message);
     }
   };
 
@@ -1604,6 +1659,7 @@ function AdminDashboard({ onLogout }) {
                       <th style={{ padding: '12px 10px', fontWeight: '600', color: 'var(--text-secondary)' }}>부서</th>
                       <th style={{ padding: '12px 10px', fontWeight: '600', color: 'var(--text-secondary)' }}>직급</th>
                       <th style={{ padding: '12px 10px', fontWeight: '600', color: 'var(--text-secondary)' }}>연락처</th>
+                      <th style={{ padding: '12px 10px', fontWeight: '600', color: 'var(--text-secondary)', textAlign: 'center' }}>작업</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1618,7 +1674,7 @@ function AdminDashboard({ onLogout }) {
                       );
                     }).length === 0 ? (
                       <tr>
-                        <td colSpan="5" style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)' }}>
+                        <td colSpan="6" style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)' }}>
                           일치하는 사원 정보가 존재하지 않습니다.
                         </td>
                       </tr>
@@ -1639,6 +1695,25 @@ function AdminDashboard({ onLogout }) {
                           <td style={{ padding: '10px' }}>{emp.team_name || '-'}</td>
                           <td style={{ padding: '10px' }}>{emp.position || '-'}</td>
                           <td style={{ padding: '10px', color: 'var(--text-secondary)' }}>{emp.phone || '-'}</td>
+                          <td style={{ padding: '10px', textAlign: 'center' }}>
+                            <button
+                              type="button"
+                              onClick={() => handleOpenEditEmployeeModal(emp)}
+                              style={{
+                                padding: '4px 10px',
+                                fontSize: '12px',
+                                fontWeight: '600',
+                                backgroundColor: 'var(--primary-color)',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '4px',
+                                cursor: 'pointer',
+                                transition: 'var(--transition-fast)'
+                              }}
+                            >
+                              수정
+                            </button>
+                          </td>
                         </tr>
                       ))
                     )}
@@ -3164,6 +3239,129 @@ function AdminDashboard({ onLogout }) {
             <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '8px', fontStyle: 'italic' }}>
               잠시만 기다려 주세요. 이 작업은 다소 시간이 걸릴 수 있습니다.
             </p>
+          </div>
+        </div>
+      )}
+
+      {/* 사원 정보 수정 모달 */}
+      {showEditEmployeeModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.6)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 1100,
+          backdropFilter: 'blur(4px)'
+        }}>
+          <div style={{
+            backgroundColor: 'var(--surface-color)',
+            padding: '24px',
+            borderRadius: '16px',
+            width: '90%',
+            maxWidth: '440px',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.15), 0 10px 10px -5px rgba(0, 0, 0, 0.05)',
+            border: '1px solid var(--border-color)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '16px'
+          }}>
+            <div style={{ textAlign: 'center' }}>
+              <h3 style={{ fontSize: '18px', fontWeight: '700', color: 'var(--text-primary)', marginBottom: '6px' }}>사원 정보 수정</h3>
+              <p style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
+                해당 임직원의 개별 프로필 정보를 수정합니다.
+              </p>
+            </div>
+
+            {editEmployeeError && (
+              <div className="alert alert-error" style={{ fontSize: '13px', padding: '10px' }}>
+                <span>{editEmployeeError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleUpdateEmployeeSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div className="input-group">
+                <label className="input-label" style={{ fontSize: '12px' }}>사번 (수정 불가)</label>
+                <input
+                  type="text"
+                  className="input-field"
+                  value={editingEmployee ? editingEmployee.emp_id : ''}
+                  disabled
+                  style={{ backgroundColor: '#f1f5f9', color: '#64748b', fontSize: '13px', padding: '8px 12px' }}
+                />
+              </div>
+
+              <div className="input-group">
+                <label className="input-label" style={{ fontSize: '12px' }}>성명</label>
+                <input
+                  type="text"
+                  className="input-field"
+                  value={editEmpName}
+                  onChange={(e) => setEditEmpName(e.target.value)}
+                  placeholder="성명을 입력해 주세요"
+                  required
+                  style={{ fontSize: '13px', padding: '8px 12px' }}
+                />
+              </div>
+
+              <div className="input-group">
+                <label className="input-label" style={{ fontSize: '12px' }}>부서</label>
+                <input
+                  type="text"
+                  className="input-field"
+                  value={editEmpTeam}
+                  onChange={(e) => setEditEmpTeam(e.target.value)}
+                  placeholder="부서명을 입력해 주세요"
+                  style={{ fontSize: '13px', padding: '8px 12px' }}
+                />
+              </div>
+
+              <div className="input-group">
+                <label className="input-label" style={{ fontSize: '12px' }}>직급</label>
+                <input
+                  type="text"
+                  className="input-field"
+                  value={editEmpPosition}
+                  onChange={(e) => setEditEmpPosition(e.target.value)}
+                  placeholder="직급을 입력해 주세요"
+                  style={{ fontSize: '13px', padding: '8px 12px' }}
+                />
+              </div>
+
+              <div className="input-group">
+                <label className="input-label" style={{ fontSize: '12px' }}>연락처</label>
+                <input
+                  type="text"
+                  className="input-field"
+                  value={editEmpPhone}
+                  onChange={(e) => setEditEmpPhone(e.target.value)}
+                  placeholder="연락처를 입력해 주세요"
+                  style={{ fontSize: '13px', padding: '8px 12px' }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', gap: '10px', marginTop: '12px' }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => setShowEditEmployeeModal(false)}
+                  style={{ flex: 1, padding: '10px', fontSize: '13px', fontWeight: '600' }}
+                >
+                  취소
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  style={{ flex: 2, padding: '10px', fontSize: '13px', fontWeight: '700' }}
+                >
+                  변경사항 저장
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

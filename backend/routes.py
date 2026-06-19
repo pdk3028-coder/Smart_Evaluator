@@ -332,6 +332,37 @@ def admin_create_employee():
         return jsonify({"detail": msg}), 400
     return jsonify({"message": msg})
 
+@api_bp.route("/admin/employees/<string:emp_id>", methods=["PUT"])
+def admin_update_employee(emp_id):
+    """관리자용: 개별 사원의 정보를 수정합니다."""
+    if not emp_id:
+        return jsonify({"detail": "사번이 유효하지 않습니다."}), 400
+
+    emp_id = emp_id.strip()
+    if emp_id.upper() == 'ADMIN':
+        return jsonify({"detail": "ADMIN 계정은 수정할 수 없습니다."}), 400
+
+    data = request.get_json() or {}
+    name = data.get("name")
+    team_name = data.get("team_name", "")
+    position = data.get("position", "")
+    phone = data.get("phone", "")
+
+    if not name or not name.strip():
+        return jsonify({"detail": "성명은 필수 항목입니다."}), 400
+
+    success, msg = db.update_employee_info(
+        emp_id=emp_id,
+        name=name.strip(),
+        team_name=team_name.strip(),
+        position=position.strip(),
+        phone=phone.strip()
+    )
+
+    if not success:
+        return jsonify({"detail": msg}), 400
+    return jsonify({"success": True, "message": msg})
+
 @api_bp.route("/admin/results/export", methods=["GET"])
 def admin_export_results():
     """관리자용: 전체 평가 결과를 피벗 테이블 형식의 Excel 파일로 내보냅니다."""

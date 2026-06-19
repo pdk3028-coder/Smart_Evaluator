@@ -876,6 +876,52 @@ def get_evaluation_results_for_export():
     
     return pivot_df
 
+def update_employee_info(emp_id, name, team_name, position, phone):
+    """사원의 정보를 수정하고, 연동된 평가 프로젝트의 타이틀을 자동으로 동기화합니다."""
+    conn = get_db_connection()
+    c = conn.cursor()
+    try:
+        # 1. 사원 존재 여부 확인
+        c.execute('SELECT id FROM employees WHERE emp_id = ?', (emp_id,))
+        emp_row = c.fetchone()
+        if not emp_row:
+            return False, "존재하지 않는 사원입니다."
+        
+        employee_id = emp_row['id']
+        now = datetime.now()
+        
+        # 2. 사원 정보 업데이트
+        c.execute('''
+            UPDATE employees
+            SET name = ?, team_name = ?, position = ?, phone = ?, last_updated = ?
+            WHERE id = ?
+        ''', (name, team_name, position, phone, now, employee_id))
+        
+        # 3. 연동된 평가 프로젝트 타이틀 동기화
+        projects = c.execute('''
+            SELECT id, evaluation_type FROM evaluation_projects 
+            WHERE evaluatee_id = ?
+        ''', (employee_id,)).fetchall()
+        
+        position_title = get_position_title(position)
+        for proj in projects:
+            proj_id = proj['id']
+            eval_type = proj['evaluation_type'] or '동료사원 평가'
+            new_title = f"{name} {position_title} {eval_type}"
+            c.execute('''
+                UPDATE evaluation_projects
+                SET title = ?
+                WHERE id = ?
+            ''', (new_title, proj_id))
+            
+        conn.commit()
+        return True, "사원 정보와 프로젝트 타이틀이 성공적으로 수정되었습니다."
+    except Exception as e:
+        conn.rollback()
+        return False, str(e)
+    finally:
+        conn.close()
+
 if __name__ == '__main__':
     # 로컬에서 데이터베이스 테이블 생성 테스트 진행
     init_db()
