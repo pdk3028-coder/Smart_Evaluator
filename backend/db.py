@@ -562,14 +562,50 @@ def upsert_employees_from_excel(filepath):
             return s
         return series.apply(clean_val)
 
-    # 병합 셀 대응을 위해 ffill() 수행 후 클렌징
-    dept_raw = get_col(4).ffill()
-    real_raw = get_col(5).ffill()
-    team_raw = get_col(6).ffill()
+    # 병합 셀 대응을 위해 행 단위로 조직명 전파를 수행합니다.
+    depts_list = []
+    reals_list = []
+    teams_list = []
+    
+    curr_dept = ""
+    curr_real = ""
+    curr_team = ""
+    
+    def clean_val_single(x):
+        s = str(x).strip()
+        if s.lower() in ['nan', 'none', '', 'nat']:
+            return ''
+        if s.endswith('.0'):
+            return s[:-2]
+        return s
 
-    depts = clean_series(dept_raw)
-    reals = clean_series(real_raw)
-    teams = clean_series(team_raw)
+    for i in range(len(df)):
+        dept_val = clean_val_single(df.iloc[i, 4])
+        real_val = clean_val_single(df.iloc[i, 5])
+        team_val = clean_val_single(df.iloc[i, 6])
+        
+        # 세 소속 정보 필드가 모두 비어있을 때만 이전 행의 값을 전파합니다 (병합 셀 상속).
+        # 특정 상위 부서명이 명시되어 있으면 이전 전파 상태를 리셋하고 해당 값들로 초기화합니다.
+        is_all_empty = (not dept_val and not real_val and not team_val)
+        
+        if not is_all_empty:
+            if dept_val:
+                curr_dept = dept_val
+                curr_real = real_val
+                curr_team = team_val
+            else:
+                if real_val:
+                    curr_real = real_val
+                if team_val:
+                    curr_team = team_val
+                    
+        depts_list.append(curr_dept)
+        reals_list.append(curr_real)
+        teams_list.append(curr_team)
+
+    depts = pd.Series(depts_list)
+    reals = pd.Series(reals_list)
+    teams = pd.Series(teams_list)
 
     emp_ids = clean_series(get_col(11))
     names = clean_series(get_col(12))
