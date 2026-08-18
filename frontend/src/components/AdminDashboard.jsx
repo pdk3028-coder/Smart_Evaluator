@@ -1271,7 +1271,40 @@ function AdminDashboard({ onLogout }) {
     
     navigator.clipboard.writeText(joinedPhones)
       .then(() => {
-        alert(`배정된 평가자 ${phoneNumbers.length}명의 전화번호가 클립보드에 복사되었습니다.\n\n[복사된 번호 목록]\n${joinedPhones}\n\n엑셀 열에 세로로 붙여넣거나 단체 문자 입력창에 붙여넣기(Ctrl+V) 하세요.`);
+        alert(`배정된 전체 평가자 ${phoneNumbers.length}명의 전화번호가 클립보드에 복사되었습니다.\n\n[복사된 번호 목록]\n${joinedPhones}\n\n엑셀 열에 세로로 붙여넣거나 단체 문자 입력창에 붙여넣기(Ctrl+V) 하세요.`);
+      })
+      .catch((err) => {
+        console.error('클립보드 복사 실패:', err);
+        alert('전화번호 복사에 실패했습니다.');
+      });
+  };
+
+  // 특정 프로젝트의 평가 미완료자(대기/임시저장) 전화번호 일괄 복사
+  const handleCopyIncompleteEvaluatorPhones = (projId) => {
+    const incompleteAssignments = assignments.filter(
+      (a) => a.project_id === projId && a.status !== 'completed'
+    );
+
+    if (incompleteAssignments.length === 0) {
+      alert('해당 프로젝트의 모든 평가자가 평가를 완료하였습니다.');
+      return;
+    }
+
+    const phoneNumbers = incompleteAssignments
+      .map((a) => a.evaluator_phone)
+      .filter((phone) => phone && phone.trim() !== '')
+      .map((phone) => phone.trim());
+
+    if (phoneNumbers.length === 0) {
+      alert(`평가 미완료자 ${incompleteAssignments.length}명 중 등록된 전화번호가 없습니다. 사원명부 엑셀을 확인해 주세요.`);
+      return;
+    }
+
+    const joinedPhones = phoneNumbers.join('\n');
+
+    navigator.clipboard.writeText(joinedPhones)
+      .then(() => {
+        alert(`평가 미완료자 ${phoneNumbers.length}명의 전화번호가 클립보드에 복사되었습니다.\n\n[복사된 번호 목록]\n${joinedPhones}\n\n리마인드 문자 발송 시스템에 붙여넣기(Ctrl+V) 하세요.`);
       })
       .catch((err) => {
         console.error('클립보드 복사 실패:', err);
@@ -2727,7 +2760,23 @@ function AdminDashboard({ onLogout }) {
                                   )}
                                 </div>
 
-                                <div style={{ display: 'flex', gap: '8px' }}>
+                                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                  <button
+                                    onClick={() => handleCopyIncompleteEvaluatorPhones(proj.project_id)}
+                                    style={{
+                                      border: '1px solid #f59e0b',
+                                      backgroundColor: '#fffbeb',
+                                      color: '#b45309',
+                                      fontSize: '11px',
+                                      fontWeight: '600',
+                                      padding: '4px 10px',
+                                      borderRadius: '4px',
+                                      cursor: 'pointer'
+                                    }}
+                                    title="아직 평가를 완료하지 않은 인원(대기/임시저장)의 연락처만 복사합니다."
+                                  >
+                                    미완료자 연락처 복사
+                                  </button>
                                   <button
                                     onClick={() => handleCopyEvaluatorPhones(proj.project_id)}
                                     style={{
@@ -2740,8 +2789,9 @@ function AdminDashboard({ onLogout }) {
                                       borderRadius: '4px',
                                       cursor: 'pointer'
                                     }}
+                                    title="배정된 모든 평가자의 연락처를 복사합니다."
                                   >
-                                    평가자 연락처 일괄 복사
+                                    전체 평가자 연락처 복사
                                   </button>
                                   <button
                                     onClick={() => handleDeleteProject(proj.project_id)}
