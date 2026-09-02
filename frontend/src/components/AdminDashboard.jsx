@@ -757,9 +757,14 @@ function AdminDashboard({ onLogout }) {
         backgroundColor: '#ffffff'
       });
 
-      const imgData = canvas.toDataURL('image/png');
-      const pdf = new jsPDF('p', 'mm', 'a4');
-      pdf.addImage(imgData, 'PNG', 0, 0, 210, 297);
+      const imgData = canvas.toDataURL('image/jpeg', 0.88);
+      const pdf = new jsPDF({
+        orientation: 'p',
+        unit: 'mm',
+        format: 'a4',
+        compress: true
+      });
+      pdf.addImage(imgData, 'JPEG', 0, 0, 210, 297, undefined, 'FAST');
       
       const arrayBuffer = pdf.output('arraybuffer');
       
