@@ -8,6 +8,8 @@ __pycache__/
 *.sqlite3-*
 *.maintenance
 db_backups/
+deploy_backup_*/
+deploy_stage_*/
 scratch/audit-*/
 release/*.zip
 backend/temp/
