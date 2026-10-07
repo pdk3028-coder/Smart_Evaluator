@@ -3,6 +3,13 @@ __pycache__/
 *.py[cod]
 *$py.class
 *.db
+*.db-*
+*.sqlite3
+*.sqlite3-*
+*.maintenance
+db_backups/
+scratch/audit-*/
+release/*.zip
 backend/temp/
 
 # Node/React

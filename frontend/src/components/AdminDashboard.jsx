@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
+import { apiFetch, escapeHtml, safePngDataUrl } from '../api';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
 import { PDFDocument } from 'pdf-lib';
@@ -6,6 +7,10 @@ import { PDFDocument } from 'pdf-lib';
 function AdminDashboard({ onLogout }) {
   const [employees, setEmployees] = useState([]);
   const [projects, setProjects] = useState([]);
+  const [rounds, setRounds] = useState([]);
+  const [selectedRoundId, setSelectedRoundId] = useState('');
+  const [newRoundName, setNewRoundName] = useState('');
+  const [roundFilter, setRoundFilter] = useState('all');
   const [assignments, setAssignments] = useState([]);
   const [lastUploadTime, setLastUploadTime] = useState('로딩 중...');
 
@@ -70,6 +75,8 @@ function AdminDashboard({ onLogout }) {
   const [mappingPreview, setMappingPreview] = useState([]); // [{ inputName, matchedEmp, status, candidates }]
 
   const [file, setFile] = useState(null);
+  const [uploadPreview, setUploadPreview] = useState(null);
+  const [uploadLoading, setUploadLoading] = useState(false);
   const [uploadMsg, setUploadMsg] = useState('');
   const [uploadError, setUploadError] = useState('');
 
@@ -148,7 +155,7 @@ function AdminDashboard({ onLogout }) {
     }
 
     try {
-      const response = await fetch(`/api/admin/projects/${projId}/period`, {
+      const response = await apiFetch(`/api/admin/projects/${projId}/period`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -192,6 +199,7 @@ function AdminDashboard({ onLogout }) {
 
   // 실시간 검색 및 상태 필터 파이프라인
   const filteredProjects = projects.filter((proj) => {
+    if (roundFilter !== 'all' && proj.round_id !== Number(roundFilter)) return false;
     const query = projectSearchText.toLowerCase().trim();
     const matchesSearch = query === '' || 
       proj.title.toLowerCase().includes(query) ||
@@ -236,16 +244,17 @@ function AdminDashboard({ onLogout }) {
   // 사원 목록, 프로젝트 목록, 배정 현황 및 업로드 시각 가져오기
   const fetchData = async () => {
     try {
-      const [empRes, projRes, assignRes, timeRes, qRes, typeRes] = await Promise.all([
-        fetch('/api/admin/employees'),
-        fetch('/api/admin/projects'),
-        fetch('/api/admin/assignments'),
-        fetch('/api/admin/last-upload-time'),
-        fetch('/api/admin/questions'),
-        fetch('/api/evaluation-types')
+      const [empRes, projRes, assignRes, timeRes, qRes, typeRes, roundRes] = await Promise.all([
+        apiFetch('/api/admin/employees'),
+        apiFetch('/api/admin/projects'),
+        apiFetch('/api/admin/assignments'),
+        apiFetch('/api/admin/last-upload-time'),
+        apiFetch('/api/admin/questions'),
+        apiFetch('/api/evaluation-types'),
+        apiFetch('/api/admin/rounds')
       ]);
 
-      if (!empRes.ok || !projRes.ok || !assignRes.ok || !timeRes.ok || !qRes.ok || !typeRes.ok) {
+      if (!empRes.ok || !projRes.ok || !assignRes.ok || !timeRes.ok || !qRes.ok || !typeRes.ok || !roundRes.ok) {
         throw new Error('데이터를 가져오는데 실패했습니다.');
       }
 
@@ -255,6 +264,7 @@ function AdminDashboard({ onLogout }) {
       const timeData = await timeRes.json();
       const qData = await qRes.json();
       const typeData = await typeRes.json();
+      const roundData = await roundRes.json();
 
       setEmployees(empData);
       setProjects(projData);
@@ -262,6 +272,8 @@ function AdminDashboard({ onLogout }) {
       setLastUploadTime(timeData.last_upload_time);
       setQuestions(qData);
       setEvaluationTypes(typeData);
+      setRounds(roundData);
+      setSelectedRoundId((previous) => previous || String(roundData[0]?.id || ''));
     } catch (err) {
       console.error(err);
     } finally {
@@ -273,14 +285,6 @@ function AdminDashboard({ onLogout }) {
     fetchData();
   }, []);
 
-  // 검색 결과 변경 시 활성 인덱스 리셋
-  useEffect(() => {
-    setActiveEvaluateeIndex(0);
-  }, [evaluateeSearchText]);
-
-  useEffect(() => {
-    setActiveEvaluatorIndex(0);
-  }, [evaluatorSearchText]);
 
   // 피평가자 검색 필터링 (최대 10개 출력)
   const filteredEvaluatees = evaluateeSearchText.trim() === ''
@@ -319,9 +323,11 @@ function AdminDashboard({ onLogout }) {
 
     const formData = new FormData();
     formData.append('file', file);
+    if (uploadPreview) formData.append('preview_token', uploadPreview.preview_token);
+    setUploadLoading(true);
 
     try {
-      const response = await fetch('/api/admin/upload-excel', {
+      const response = await apiFetch(`/api/admin/upload-excel${uploadPreview ? '' : '?preview=1'}`, {
         method: 'POST',
         body: formData,
       });
@@ -331,11 +337,19 @@ function AdminDashboard({ onLogout }) {
         throw new Error(data.detail || '엑셀 업로드에 실패했습니다.');
       }
 
+      if (!uploadPreview) {
+        setUploadPreview(data);
+        return;
+      }
+      setUploadPreview(null);
       setUploadMsg(data.message);
       setFile(null);
       fetchData();
     } catch (err) {
       setUploadError(err.message);
+      setUploadPreview(null);
+    } finally {
+      setUploadLoading(false);
     }
   };
 
@@ -351,7 +365,7 @@ function AdminDashboard({ onLogout }) {
     }
 
     try {
-      const response = await fetch('/api/admin/employees', {
+      const response = await apiFetch('/api/admin/employees', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -402,7 +416,7 @@ function AdminDashboard({ onLogout }) {
       return;
     }
     try {
-      const response = await fetch(`/api/admin/employees/${editingEmployee.emp_id}`, {
+      const response = await apiFetch(`/api/admin/employees/${editingEmployee.emp_id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -437,7 +451,7 @@ function AdminDashboard({ onLogout }) {
       return;
     }
     try {
-      const response = await fetch('/api/admin/employees/reset', {
+      const response = await apiFetch('/api/admin/employees/reset', {
         method: 'POST',
       });
       const data = await response.json();
@@ -468,7 +482,7 @@ function AdminDashboard({ onLogout }) {
 
   // 개별 확인서 PDF 바이너리 생성 헬퍼 함수
   const generateSinglePDFBytes = async (assignmentId) => {
-    const response = await fetch(`/api/admin/evaluations/${assignmentId}`);
+    const response = await apiFetch(`/api/admin/evaluations/${assignmentId}`);
     if (!response.ok) {
       throw new Error('평가 상세 정보를 가져오는데 실패했습니다.');
     }
@@ -483,7 +497,7 @@ function AdminDashboard({ onLogout }) {
         const month = String(date.getMonth() + 1).padStart(2, '0');
         const day = String(date.getDate()).padStart(2, '0');
         return `${year}년 ${month}월 ${day}일`;
-      } catch (e) {
+      } catch {
         return dateStr;
       }
     };
@@ -493,24 +507,21 @@ function AdminDashboard({ onLogout }) {
     const essayQuestions = data.questions.filter(q => q.is_essay === 1);
 
     // 객관식 점수 합계 계산
-    let totalScore = 0;
-    let maxScore = objectiveQuestions.length * 10;
-    objectiveQuestions.forEach(q => {
-      const ans = data.answers.find(a => a.question_id === q.question_id);
-      if (ans && ans.score !== null) {
-        totalScore += ans.score;
-      }
-    });
+    const totalScore = data.total_score ?? 0;
+    const maxScore = data.max_score;
+    const signature = safePngDataUrl(data.signature_data);
 
     const objectiveHtml = objectiveQuestions.map((q, idx) => {
-      const ans = data.answers.find(a => a.question_id === q.question_id);
-      const scoreText = ans && ans.score !== null ? `${ans.score}점 / 10점` : '-';
+      const answers = data.answers.filter(a => a.question_id === q.question_id);
+      const scoreText = answers.length ? answers.map(ans => ans.score == null ? '-' : `${escapeHtml(ans.score)}점${q.max_score == null ? '' : ` / ${escapeHtml(q.max_score)}점`}`).join('<br/>') : '-';
       
       return `
         <tr class="item-row">
           <td class="center-text">${idx + 1}</td>
           <td>
-            <div class="q-main">${q.category}</div>
+            <div class="q-main">${escapeHtml(q.category)}</div>
+            <div class="q-sub">${escapeHtml(q.question_text)}</div>
+            ${q.question_sub_text ? `<div class="q-sub">${escapeHtml(q.question_sub_text)}</div>` : ''}
           </td>
           <td class="center-text font-bold">${scoreText}</td>
         </tr>
@@ -523,19 +534,21 @@ function AdminDashboard({ onLogout }) {
         <td>
           <div class="q-main" style="color: #1e293b;">객관식 점수 합계</div>
         </td>
-        <td class="center-text" style="color: #1d4ed8; font-weight: 800;">${totalScore}점 / ${maxScore}점</td>
+        <td class="center-text" style="color: #1d4ed8; font-weight: 800;">${escapeHtml(totalScore)}점${maxScore == null ? ' (기존 척도 미확인)' : ` / ${escapeHtml(maxScore)}점`}</td>
       </tr>
     `;
 
     const essayHtml = essayQuestions.map(q => {
-      const ans = data.answers.find(a => a.question_id === q.question_id);
-      const essayText = ans && ans.answer_text ? ans.answer_text.replace(/\n/g, '<br/>') : '';
+      const answers = data.answers.filter(a => a.question_id === q.question_id);
+      const essayText = answers.map(ans => escapeHtml(ans.answer_text || '').replace(/\n/g, '<br/>')).join('<br/><br/>');
       
       return `
         <tr class="essay-row">
           <td colspan="3" style="padding-top: 8px;">
             <div class="essay-box">
-              <strong>[평가자 의견]</strong><br/>
+              <strong>[${escapeHtml(q.category)}]</strong><br/>
+              <div>${escapeHtml(q.question_text)}</div>
+              ${q.question_sub_text ? `<div>${escapeHtml(q.question_sub_text)}</div>` : ''}
               <div style="margin-top: 4px; line-height: 1.4; color: #1e293b;">
                 ${essayText || '<span style="color: #94a3b8; font-style: italic;">작성된 평가자 의견이 없습니다.</span>'}
               </div>
@@ -692,7 +705,9 @@ function AdminDashboard({ onLogout }) {
         }
       </style>
       <div class="contract-container-pdf">
-        <h1 class="main-title">동 료 평 가 완 료 확 인 서</h1>
+        <h1 class="main-title">평 가 완 료 확 인 서</h1>
+        <p>${escapeHtml(data.snapshot_note || '')}</p>
+        <p>평가 회차: ${escapeHtml(data.assignment.round_name)}</p>
         
         <div class="prologue">
           위 평가자는 신의성실의 원칙에 입각하여 동료평가를 공정하고 객관적으로 완수하였으며,
@@ -703,19 +718,19 @@ function AdminDashboard({ onLogout }) {
         <table class="info-table">
           <tr>
             <td class="label">평가 프로젝트</td>
-            <td class="value" colspan="3">${data.assignment.project_title}</td>
+            <td class="value" colspan="3">${escapeHtml(data.assignment.project_title)}</td>
           </tr>
           <tr>
             <td class="label">피평가자(대상자)</td>
-            <td class="value">${data.assignment.evaluatee_name} ${data.assignment.evaluatee_position || '사원'}</td>
+            <td class="value">${escapeHtml(data.assignment.evaluatee_name)} ${escapeHtml(data.assignment.evaluatee_position || '사원')}</td>
             <td class="label">소속 부서</td>
-            <td class="value">${data.assignment.evaluatee_team || '부서없음'}</td>
+            <td class="value">${escapeHtml(data.assignment.evaluatee_team || '부서없음')}</td>
           </tr>
           <tr>
             <td class="label">평가자</td>
-            <td class="value">${data.assignment.evaluator_name} ${data.assignment.evaluator_position || '사원'}</td>
+            <td class="value">${escapeHtml(data.assignment.evaluator_name)} ${escapeHtml(data.assignment.evaluator_position || '사원')}</td>
             <td class="label">소속 부서</td>
-            <td class="value">${data.assignment.evaluator_team || '부서없음'}</td>
+            <td class="value">${escapeHtml(data.assignment.evaluator_team || '부서없음')}</td>
           </tr>
         </table>
 
@@ -734,11 +749,11 @@ function AdminDashboard({ onLogout }) {
         </table>
 
         <div class="sign-block">
-          <div class="date-str">${formattedDate}</div>
+          <div class="date-str">${escapeHtml(formattedDate)}</div>
           <div class="signature-line">
-            <span>평가자: <strong>${data.assignment.evaluator_name}</strong></span>
+            <span>평가자: <strong>${escapeHtml(data.assignment.evaluator_name)}</strong></span>
             <div class="sig-wrapper">
-              ${data.signature_data ? `<img src="${data.signature_data}" alt="서명" class="sig-img" />` : '<span class="no-sig">(서명 생략)</span>'}
+              ${signature ? `<img src="${signature}" alt="서명" class="sig-img" />` : '<span class="no-sig">(서명 생략)</span>'}
             </div>
           </div>
         </div>
@@ -753,18 +768,26 @@ function AdminDashboard({ onLogout }) {
       const canvas = await html2canvas(container, {
         scale: 2,
         useCORS: true,
-        allowTaint: true,
+        allowTaint: false,
         backgroundColor: '#ffffff'
       });
 
-      const imgData = canvas.toDataURL('image/jpeg', 0.88);
       const pdf = new jsPDF({
         orientation: 'p',
         unit: 'mm',
         format: 'a4',
         compress: true
       });
-      pdf.addImage(imgData, 'JPEG', 0, 0, 210, 297, undefined, 'FAST');
+      const pageHeightPixels = Math.floor(canvas.width * 297 / 210);
+      for (let offset = 0; offset < canvas.height; offset += pageHeightPixels) {
+        const pageCanvas = document.createElement('canvas');
+        pageCanvas.width = canvas.width;
+        pageCanvas.height = Math.min(pageHeightPixels, canvas.height - offset);
+        pageCanvas.getContext('2d').drawImage(canvas, 0, offset, canvas.width, pageCanvas.height, 0, 0, canvas.width, pageCanvas.height);
+        if (offset > 0) pdf.addPage();
+        pdf.addImage(pageCanvas.toDataURL('image/jpeg', 0.88), 'JPEG', 0, 0, 210,
+          pageCanvas.height * 210 / canvas.width, undefined, 'FAST');
+      }
       
       const arrayBuffer = pdf.output('arraybuffer');
       
@@ -827,11 +850,13 @@ function AdminDashboard({ onLogout }) {
       const mergedPdfBytes = await mergedPdf.save();
       const blob = new Blob([mergedPdfBytes], { type: 'application/pdf' });
       const link = document.createElement('a');
-      link.href = URL.createObjectURL(blob);
+      const objectUrl = URL.createObjectURL(blob);
+      link.href = objectUrl;
       link.download = `${projectTitle}_동료평가완료확인서_일괄.pdf`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
     } catch (err) {
       alert('일괄 PDF 병합에 실패했습니다: ' + err.message);
     } finally {
@@ -841,19 +866,44 @@ function AdminDashboard({ onLogout }) {
   };
 
 
+  const handleCreateRound = async () => {
+    setProjCreateError('');
+    if (!newRoundName.trim()) {
+      setProjCreateError('새 회차 이름을 입력해 주세요.');
+      return;
+    }
+    try {
+      const response = await apiFetch('/api/admin/rounds', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newRoundName.trim() }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || '회차 생성에 실패했습니다.');
+      setSelectedRoundId(String(data.round_id));
+      setNewRoundName('');
+      await fetchData();
+    } catch (error) {
+      setProjCreateError(error.message);
+    }
+  };
+
   // 평가 프로젝트 생성
   const handleCreateProject = async (e) => {
     e.preventDefault();
     setProjCreateError('');
     setProjCreateSuccess('');
 
+    if (!selectedRoundId) {
+      setProjCreateError('평가 회차를 생성하거나 선택해 주세요.');
+      return;
+    }
     if (!projectEvaluateeId) {
       setProjCreateError('피평가자를 선택해 주세요.');
       return;
     }
 
     try {
-      const response = await fetch('/api/admin/projects', {
+      const response = await apiFetch('/api/admin/projects', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -861,6 +911,7 @@ function AdminDashboard({ onLogout }) {
         body: JSON.stringify({
           evaluatee_id: parseInt(projectEvaluateeId, 10),
           evaluation_type: evaluationType,
+          round_id: Number(selectedRoundId),
           start_date: startDate,
           end_date: endDate
         }),
@@ -893,7 +944,7 @@ function AdminDashboard({ onLogout }) {
     }
 
     try {
-      const response = await fetch('/api/admin/evaluation-types', {
+      const response = await apiFetch('/api/admin/evaluation-types', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -925,7 +976,7 @@ function AdminDashboard({ onLogout }) {
     setEvalTypeSuccess('');
 
     try {
-      const response = await fetch('/api/admin/evaluation-types', {
+      const response = await apiFetch('/api/admin/evaluation-types', {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
@@ -1000,7 +1051,7 @@ function AdminDashboard({ onLogout }) {
     const evaluatorIds = selectedEvaluators.map((emp) => emp.id);
 
     try {
-      const response = await fetch('/api/admin/assignments/bulk', {
+      const response = await apiFetch('/api/admin/assignments/bulk', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1157,7 +1208,7 @@ function AdminDashboard({ onLogout }) {
     const evaluatorIds = validPreviews.map(p => p.matchedEmp.id);
 
     try {
-      const response = await fetch('/api/admin/assignments/bulk', {
+      const response = await apiFetch('/api/admin/assignments/bulk', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1189,7 +1240,7 @@ function AdminDashboard({ onLogout }) {
     }
 
     try {
-      const response = await fetch(`/api/admin/projects/${projId}`, {
+      const response = await apiFetch(`/api/admin/projects/${projId}`, {
         method: 'DELETE',
       });
 
@@ -1216,7 +1267,7 @@ function AdminDashboard({ onLogout }) {
     }
 
     try {
-      const response = await fetch(`/api/admin/assignments/${assignId}`, {
+      const response = await apiFetch(`/api/admin/assignments/${assignId}`, {
         method: 'DELETE',
       });
 
@@ -1234,7 +1285,7 @@ function AdminDashboard({ onLogout }) {
   // 배정 진행 상태 강제 변경 (관리자 기능)
   const handleStatusChange = async (assignId, newStatus) => {
     try {
-      const response = await fetch(`/api/admin/assignments/${assignId}/status`, {
+      const response = await apiFetch(`/api/admin/assignments/${assignId}/status`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -1326,7 +1377,7 @@ function AdminDashboard({ onLogout }) {
     }
 
     try {
-      const response = await fetch('/api/admin/questions', {
+      const response = await apiFetch('/api/admin/questions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1375,7 +1426,7 @@ function AdminDashboard({ onLogout }) {
     }
 
     try {
-      const response = await fetch(`/api/admin/questions/${qId}`, {
+      const response = await apiFetch(`/api/admin/questions/${qId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -1409,7 +1460,7 @@ function AdminDashboard({ onLogout }) {
     }
 
     try {
-      const response = await fetch(`/api/admin/questions/${qId}`, {
+      const response = await apiFetch(`/api/admin/questions/${qId}`, {
         method: 'DELETE'
       });
 
@@ -1428,7 +1479,7 @@ function AdminDashboard({ onLogout }) {
   // 비활성화 문항 활성화
   const handleActivateQuestion = async (qId) => {
     try {
-      const response = await fetch(`/api/admin/questions/${qId}/activate`, {
+      const response = await apiFetch(`/api/admin/questions/${qId}/activate`, {
         method: 'PATCH'
       });
 
@@ -1461,7 +1512,7 @@ function AdminDashboard({ onLogout }) {
 
     const questionIds = newQuestions.map(q => q.id);
     try {
-      const response = await fetch('/api/admin/questions/reorder', {
+      const response = await apiFetch('/api/admin/questions/reorder', {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -1609,11 +1660,26 @@ function AdminDashboard({ onLogout }) {
                       accept=".xls,.xlsx"
                       className="input-field"
                       style={{ padding: '8px 12px', fontSize: '13px' }}
-                      onChange={(e) => setFile(e.target.files[0])}
+                      onChange={(e) => { setFile(e.target.files[0]); setUploadPreview(null); }}
+                      disabled={uploadLoading}
                     />
                   </div>
-                  <button className="btn btn-secondary" type="submit" style={{ padding: '10px', fontSize: '14px' }}>
-                    엑셀 업로드 반영
+                  {uploadPreview && (
+                    <div style={{ fontSize: '12px', maxHeight: '260px', overflowY: 'auto' }}>
+                      <strong>신규 {uploadPreview.inserted}명 · 수정 {uploadPreview.updated}명 · 동일 {uploadPreview.skipped}명</strong>
+                      <p>소속·전화번호 변경을 확인한 후 반영해 주세요. 빈 전화번호는 기존 번호를 유지합니다.</p>
+                      {uploadPreview.changes.filter((change) => change.changed).map((change) => (
+                        <div key={change.employee.emp_id} style={{ borderBottom: '1px solid #e2e8f0', padding: '8px 0' }}>
+                          <strong>{change.employee.name} ({change.employee.emp_id})</strong>
+                          <div>소속: {change.before?.team_name || '(없음)'} → {change.employee.team_name || '(없음)'}</div>
+                          <div>직급: {change.before?.position || '(없음)'} → {change.employee.position || '(없음)'}</div>
+                          <div>전화번호: {change.before?.phone || '(없음)'} → {change.employee.phone || '(없음)'}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <button className="btn btn-secondary" type="submit" disabled={uploadLoading} style={{ padding: '10px', fontSize: '14px' }}>
+                    {uploadLoading ? '처리 중...' : uploadPreview ? '확인한 변경사항 반영' : '명부 변경사항 미리보기'}
                   </button>
                   <button
                     type="button"
@@ -1843,6 +1909,7 @@ function AdminDashboard({ onLogout }) {
                       value={evaluateeSearchText}
                       onChange={(e) => {
                         setEvaluateeSearchText(e.target.value);
+              setActiveEvaluateeIndex(0);
                         setShowEvaluateeDropdown(true);
                         setProjectEvaluateeId('');
                       }}
@@ -1920,6 +1987,21 @@ function AdminDashboard({ onLogout }) {
                         )}
                       </div>
                     )}
+                  </div>
+
+                  <div className="input-group">
+                    <label className="input-label" htmlFor="evaluation-round">평가 회차</label>
+                    <select id="evaluation-round" className="input-field" value={selectedRoundId}
+                      onChange={(event) => setSelectedRoundId(event.target.value)} required>
+                      <option value="">회차 선택</option>
+                      {rounds.map((round) => <option key={round.id} value={round.id}>{round.name}</option>)}
+                    </select>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <input className="input-field" aria-label="새 회차 이름" placeholder="예: 2026년 하반기"
+                        maxLength={100} value={newRoundName} onChange={(event) => setNewRoundName(event.target.value)} style={{ minWidth: 0, flex: 1 }} />
+                      <button type="button" className="btn btn-secondary" onClick={handleCreateRound} style={{ width: 'auto' }}>회차 추가</button>
+                    </div>
+                    <small>문항은 프로젝트 생성 시 고정됩니다. 문항 수정은 새 프로젝트에 반영됩니다.</small>
                   </div>
 
                   <div className="input-group">
@@ -2225,6 +2307,7 @@ function AdminDashboard({ onLogout }) {
                         value={evaluatorSearchText}
                         onChange={(e) => {
                           setEvaluatorSearchText(e.target.value);
+              setActiveEvaluatorIndex(0);
                           setShowEvaluatorDropdown(true);
                         }}
                         onFocus={() => setShowEvaluatorDropdown(true)}
@@ -2504,6 +2587,11 @@ function AdminDashboard({ onLogout }) {
                       onChange={(e) => setProjectSearchText(e.target.value)}
                       style={{ flex: 2, padding: '8px 12px', fontSize: '13px' }}
                     />
+                    <select className="input-field" aria-label="평가 회차 필터" value={roundFilter}
+                      onChange={(event) => setRoundFilter(event.target.value)} style={{ flex: 1, padding: '8px', fontSize: '13px' }}>
+                      <option value="all">전체 회차</option>
+                      {rounds.map((round) => <option key={round.id} value={round.id}>{round.name}</option>)}
+                    </select>
                     <select
                       className="input-field"
                       value={projectStatusFilter}

@@ -23,7 +23,8 @@ def serve_static(path):
 
 # DB 초기화
 with app.app_context():
-    db.init_db()
+    from migrations import ensure_ready
+    ensure_ready(db.DB_PATH)
 
 if __name__ == "__main__":
     # 로컬 개발 서버 실행 (포트 8000)

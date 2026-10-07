@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { apiFetch } from '../api';
 
 function EvaluationForm({ user, assignment, onBack, onSubmitSuccess }) {
   const [questions, setQuestions] = useState([]);
@@ -16,57 +17,42 @@ function EvaluationForm({ user, assignment, onBack, onSubmitSuccess }) {
   const [isDrawing, setIsDrawing] = useState(false);
   const [hasSignature, setHasSignature] = useState(false);
 
-  // 질문 목록 및 기존 임시저장 답변 가져오기
-  const fetchQuestionsAndDraft = async () => {
-    try {
-      const [qRes, draftRes] = await Promise.all([
-        fetch(`/api/evaluations/questions?assignment_id=${assignment.assignment_id}`),
-        fetch(`/api/evaluations/draft?assignment_id=${assignment.assignment_id}`)
-      ]);
-
-      if (!qRes.ok || !draftRes.ok) {
-        throw new Error('평가 정보를 불러오지 못했습니다.');
-      }
-
-      const qData = await qRes.json();
-      const draftData = await draftRes.json();
-
-      setQuestions(qData);
-
-      // 기본 답변 구조 생성
-      const initialAnswers = {};
-      qData.forEach((q) => {
-        initialAnswers[q.id] = {
-          question_id: q.id,
-          score: null, // 초기에는 선택되지 않은 상태로 설정
-          answer_text: '',
-        };
-      });
-
-      // 기존 임시저장(draft)이 있다면 덮어쓰기
-      if (draftData.has_draft && draftData.answers.length > 0) {
-        draftData.answers.forEach((ans) => {
-          if (initialAnswers[ans.question_id]) {
-            initialAnswers[ans.question_id] = {
-              question_id: ans.question_id,
-              score: ans.score,
-              answer_text: ans.answer_text || '',
-            };
-          }
-        });
-      }
-
-      setAnswers(initialAnswers);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
+  // Cancel requests when leaving the form; do not apply late results to another assignment.
   useEffect(() => {
-    fetchQuestionsAndDraft();
-  }, []);
+    const controller = new AbortController();
+    const loadEvaluation = async () => {
+      try {
+        const [qRes, draftRes] = await Promise.all([
+          apiFetch(`/api/evaluations/questions?assignment_id=${assignment.assignment_id}`, { signal: controller.signal }),
+          apiFetch(`/api/evaluations/draft?assignment_id=${assignment.assignment_id}`, { signal: controller.signal }),
+        ]);
+        if (!qRes.ok || !draftRes.ok) throw new Error('평가 정보를 불러오지 못했습니다.');
+        const [qData, draftData] = await Promise.all([qRes.json(), draftRes.json()]);
+        if (controller.signal.aborted) return;
+        const initialAnswers = {};
+        qData.forEach((question) => {
+          initialAnswers[question.id] = { question_id: question.id, score: null, answer_text: '' };
+        });
+        if (draftData.has_draft) {
+          draftData.answers.forEach((answer) => {
+            if (initialAnswers[answer.question_id]) {
+              initialAnswers[answer.question_id] = {
+                question_id: answer.question_id, score: answer.score, answer_text: answer.answer_text || '',
+              };
+            }
+          });
+        }
+        setQuestions(qData);
+        setAnswers(initialAnswers);
+      } catch (failure) {
+        if (!controller.signal.aborted) setError(failure.message);
+      } finally {
+        if (!controller.signal.aborted) setLoading(false);
+      }
+    };
+    loadEvaluation();
+    return () => controller.abort();
+  }, [assignment.assignment_id]);
 
   // 임시 저장 처리
   const handleSaveDraft = async () => {
@@ -75,6 +61,7 @@ function EvaluationForm({ user, assignment, onBack, onSubmitSuccess }) {
 
     const submitPayload = {
       assignment_id: assignment.assignment_id,
+      question_revision: questions[0]?.question_revision,
       evaluator_id: user.id,
       evaluatee_id: assignment.employee_id,
       answers: Object.values(answers).map((ans) => ({
@@ -85,7 +72,7 @@ function EvaluationForm({ user, assignment, onBack, onSubmitSuccess }) {
     };
 
     try {
-      const response = await fetch('/api/evaluations/draft', {
+      const response = await apiFetch('/api/evaluations/draft', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -157,7 +144,7 @@ function EvaluationForm({ user, assignment, onBack, onSubmitSuccess }) {
     const clientY = e.touches ? e.touches[0].clientY : e.clientY;
     
     ctx.beginPath();
-    ctx.moveTo(clientX - rect.left, clientY - rect.top);
+    ctx.moveTo((clientX - rect.left) * canvas.width / rect.width, (clientY - rect.top) * canvas.height / rect.height);
     setIsDrawing(true);
   };
 
@@ -171,7 +158,7 @@ function EvaluationForm({ user, assignment, onBack, onSubmitSuccess }) {
     const clientX = e.touches ? e.touches[0].clientX : e.clientX;
     const clientY = e.touches ? e.touches[0].clientY : e.clientY;
     
-    ctx.lineTo(clientX - rect.left, clientY - rect.top);
+    ctx.lineTo((clientX - rect.left) * canvas.width / rect.width, (clientY - rect.top) * canvas.height / rect.height);
     ctx.stroke();
     setHasSignature(true);
   };
@@ -201,7 +188,7 @@ function EvaluationForm({ user, assignment, onBack, onSubmitSuccess }) {
     // 유효성 검사 (객관식 선택 및 주관식 답변 필수 여부)
     let isValid = true;
     for (const q of questions) {
-      if (!q.is_essay && (answers[q.id]?.score === null || answers[q.id]?.score === undefined)) {
+      if (!q.is_essay && (!Number.isInteger(answers[q.id]?.score) || answers[q.id].score < q.min_score || answers[q.id].score > q.max_score)) {
         setAlertModalMsg('모든 객관식 평가 문항을 평가해 주세요.');
         setShowAlertModal(true);
         isValid = false;
@@ -219,6 +206,10 @@ function EvaluationForm({ user, assignment, onBack, onSubmitSuccess }) {
       return;
     }
 
+    if (questions.length === 0) {
+      setErrorMsg('평가 문항이 없습니다. 관리자에게 문의해 주세요.');
+      return;
+    }
     setShowSignatureModal(true);
     setHasSignature(false); // 열 때마다 초기 서명 상태 false로
   };
@@ -240,6 +231,7 @@ function EvaluationForm({ user, assignment, onBack, onSubmitSuccess }) {
 
     const submitPayload = {
       assignment_id: assignment.assignment_id,
+      question_revision: questions[0]?.question_revision,
       evaluator_id: user.id,
       evaluatee_id: assignment.employee_id,
       signature_data: signatureDataUrl,
@@ -251,7 +243,7 @@ function EvaluationForm({ user, assignment, onBack, onSubmitSuccess }) {
     };
 
     try {
-      const response = await fetch('/api/evaluations/submit', {
+      const response = await apiFetch('/api/evaluations/submit', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -350,7 +342,7 @@ function EvaluationForm({ user, assignment, onBack, onSubmitSuccess }) {
                 {/* 객관식 (5점 척도 - 6~10점 선택) */}
                 {!q.is_essay ? (
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '12px', padding: '0 8px' }}>
-                    {[6, 7, 8, 9, 10].map((score) => {
+                    {Array.from({ length: q.max_score - q.min_score + 1 }, (_, index) => q.min_score + index).map((score) => {
                       const isSelected = answers[q.id]?.score === score;
                       return (
                         <button
@@ -462,7 +454,10 @@ function EvaluationForm({ user, assignment, onBack, onSubmitSuccess }) {
                   borderRadius: '8px',
                   cursor: 'crosshair',
                   backgroundColor: '#ffffff',
-                  touchAction: 'none'
+                  touchAction: 'none',
+                  width: '100%',
+                  maxWidth: '400px',
+                  aspectRatio: '2 / 1'
                 }}
                 onMouseDown={startDrawing}
                 onMouseMove={draw}
