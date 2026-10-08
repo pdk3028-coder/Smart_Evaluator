@@ -62,3 +62,11 @@
 신규 평가 저장·최종 제출, 기록 고정, 동시 제출 차단과 PDF HTML 삽입 방어는 가상 DB 테스트 및 가상 평가 화면에서 검증했다. 운영 검증은 기존 자료의 조회·Excel 대조와 자료를 생성하지 않는 오류 요청으로 수행했다.
 
 복구가 필요하면 먼저 쓰기를 중단하고 현재 DB를 추가 백업한다. 서비스 재개 후의 새 제출을 보존해야 하므로 이전 직전 백업으로 바로 덮어쓰지 않는다. 세부 절차는 [적용·복구 안내](DEPLOYMENT.md)를 따른다.
+
+## 2026-10-08 화면 캐시 수정 적용
+
+북마크 방문 시 이전 화면이 표시되는 문제에 대해 [f392fca](https://github.com/pdk3028-coder/Smart_Evaluator/commit/f392fca)의 캐시 정책을 운영에 적용했다. HTML과 API 응답은 `no-store, no-cache, max-age=0, must-revalidate`를 사용한다. 첫 화면이 Flask를 우회하지 않도록 PythonAnywhere의 `/` 정적 매핑만 제거하고 Reload했다. `/assets/`, `/icons.svg`, `/favicon.svg` 매핑은 유지한다.
+
+운영 `/`, `/index.html`, `/api/admin/rounds` 모두 200 및 캐시 방지 헤더를 확인했다. 이전 HTML의 `If-Modified-Since`·`If-None-Match` 요청에도 첫 화면은 200으로 응답했다. 기존 JS 번들 및 조회 API도 200이다. 로컬에서는 분리된 가상 DB로 동일 동작을 확인했다.
+
+이 배포는 `backend/main.py`와 운영 설정·기록 문서만 변경했다. DB 변경, 이전, 로그인 로직 수정은 수행하지 않았다. 이전 코드와 루트 매핑은 `/home/SmartEvaluator/deploy_backup_20261008_cache/main-before.py`, `static-root-before.txt`에 보관했다. 이 캐시 설정만 되돌릴 때는 코드·매핑을 복구하고 Reload하며 DB 백업을 덮어쓰지 않는다. 배포 전 이미 PC에 캐시된 화면은 마지막으로 한 번 강제 새로고침이 필요할 수 있다.
