@@ -20,7 +20,15 @@
 | Virtualenv | `/home/SmartEvaluator/.virtualenvs/myenv` |
 | WSGI | `/var/www/smartevaluator_pythonanywhere_com_wsgi.py` |
 | WSGI import | `from wsgi import wsgi_app as application` |
-| 정적 경로 | `/assets/`, `/icons.svg`, `/favicon.svg`, `/`가 `backend/static` 아래 파일·디렉터리를 가리킴 |
+| 정적 경로 | `/assets/`, `/icons.svg`, `/favicon.svg`가 `backend/static` 아래 파일·디렉터리를 가리킴. 첫 화면 `/`는 Flask가 제공한다. |
+
+## 화면 캐시 설정 (2026-10-08)
+
+북마크 접속 시 이전 화면이 재사용되는 문제를 방지하기 위해 HTML 및 `/api/` 응답에 `Cache-Control: no-store, no-cache, max-age=0, must-revalidate`를 적용한다. `/`와 `/index.html`은 이전 HTML의 조건부 요청에도 최신 문서를 200으로 반환한다. 파일명에 해시가 들어간 `/assets/` 파일은 기존처럼 직접 제공한다.
+
+PythonAnywhere Web > Static files에 `/` → `/home/SmartEvaluator/backend/static` 매핑이 있으면 **해당 매핑만 제거**하고 Reload한다. 파일이나 DB를 삭제하는 작업이 아니다. 루트 매핑이 남으면 첫 화면이 Flask를 우회하므로 캐시 정책이 적용되지 않는다. 이후 배포에서도 루트 매핑을 다시 추가하지 않는다.
+
+배포 후 `/`, `/index.html`, `/api/admin/rounds`의 상태 200 및 `Cache-Control`을 확인하고 `/assets/` 로딩을 확인한다. 배포 전에 PC에 이미 저장된 화면은 한 번 `Ctrl+Shift+R`로 갱신해야 할 수 있다. 이후 방문에는 새 정책이 적용된다. DB 이전이나 로그인 정보 초기화는 필요하지 않다.
 
 계정 홈 자체가 체크아웃 루트이므로 홈 디렉터리를 통째로 패키징하지 않는다. 코드·정적 파일·WSGI 및 DB를 필요한 범위로 백업하고 `.ssh`, 계정 설정, 가상환경, 명부를 코드 배포 패키지에 섞지 않는다.
 
