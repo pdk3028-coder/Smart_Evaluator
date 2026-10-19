@@ -590,14 +590,6 @@ function AdminDashboard({ onLogout }) {
           border-bottom: 2px double #475569;
           padding-bottom: 10px;
         }
-        .prologue {
-          font-size: 13px;
-          line-height: 1.6;
-          text-align: justify;
-          margin-bottom: 20px;
-          color: #334155;
-          text-indent: 10px;
-        }
         .section-title {
           font-size: 14.5px;
           font-weight: 700;
@@ -705,13 +697,7 @@ function AdminDashboard({ onLogout }) {
       </style>
       <div class="contract-container-pdf">
         <h1 class="main-title">평 가 완 료 확 인 서</h1>
-        <p>${escapeHtml(data.snapshot_note || '')}</p>
-        <p>평가 회차: ${escapeHtml(data.assignment.round_name)}</p>
-        
-        <div class="prologue">
-          위 평가자는 신의성실의 원칙에 입각하여 동료평가를 공정하고 객관적으로 완수하였으며,
-          평가 대상자에 대한 다각적인 역량 평가와 서술식 피드백을 기록하여 제출하였음을 확인합니다.
-        </div>
+        ${data.snapshot_note ? `<p>${escapeHtml(data.snapshot_note)}</p>` : ''}
 
         <div class="section-title">1. 평가 개요</div>
         <table class="info-table">
