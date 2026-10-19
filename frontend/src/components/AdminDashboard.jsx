@@ -720,7 +720,7 @@ function AdminDashboard({ onLogout }) {
             <td class="value" colspan="3">${escapeHtml(data.assignment.project_title)}</td>
           </tr>
           <tr>
-            <td class="label">피평가자(대상자)</td>
+            <td class="label">피평가자</td>
             <td class="value">${escapeHtml(data.assignment.evaluatee_name)} ${escapeHtml(data.assignment.evaluatee_position || '사원')}</td>
             <td class="label">소속 부서</td>
             <td class="value">${escapeHtml(data.assignment.evaluatee_team || '부서없음')}</td>
@@ -777,16 +777,14 @@ function AdminDashboard({ onLogout }) {
         format: 'a4',
         compress: true
       });
-      const pageHeightPixels = Math.floor(canvas.width * 297 / 210);
-      for (let offset = 0; offset < canvas.height; offset += pageHeightPixels) {
-        const pageCanvas = document.createElement('canvas');
-        pageCanvas.width = canvas.width;
-        pageCanvas.height = Math.min(pageHeightPixels, canvas.height - offset);
-        pageCanvas.getContext('2d').drawImage(canvas, 0, offset, canvas.width, pageCanvas.height, 0, 0, canvas.width, pageCanvas.height);
-        if (offset > 0) pdf.addPage();
-        pdf.addImage(pageCanvas.toDataURL('image/jpeg', 0.88), 'JPEG', 0, 0, 210,
-          pageCanvas.height * 210 / canvas.width, undefined, 'FAST');
-      }
+      // Fit the complete certificate on one A4 page without cropping or distortion.
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const scale = Math.min(pageWidth / canvas.width, pageHeight / canvas.height);
+      const imageWidth = canvas.width * scale;
+      const imageHeight = canvas.height * scale;
+      pdf.addImage(canvas.toDataURL('image/jpeg', 0.88), 'JPEG',
+        (pageWidth - imageWidth) / 2, 0, imageWidth, imageHeight, undefined, 'FAST');
       
       const arrayBuffer = pdf.output('arraybuffer');
       
