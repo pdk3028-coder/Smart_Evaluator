@@ -540,7 +540,7 @@ function AdminDashboard({ onLogout }) {
     const essayHtml = essayQuestions.map(q => {
       const answers = data.answers.filter(a => a.question_id === q.question_id);
       const essayText = answers.filter(ans => typeof ans.answer_text === 'string' && ans.answer_text.trim())
-        .map(ans => escapeHtml(ans.answer_text).replace(/\n/g, '<br/>')).join('<br/><br/>');
+        .map(ans => escapeHtml(ans.answer_text.replace(/\r\n?|\n/g, ' ').trim())).join('<br/><br/>');
       if (!essayText) return '';
       
       return `
@@ -548,7 +548,7 @@ function AdminDashboard({ onLogout }) {
           <td colspan="3" style="padding-top: 8px;">
             <div class="essay-box">
               <strong>[${escapeHtml(q.category)}]</strong><br/>
-              <div style="margin-top: 4px; line-height: 1.4; color: #1e293b;">
+              <div style="margin-top: 4px; line-height: 1.4; color: #1e293b; white-space: normal; overflow-wrap: anywhere;">
                 ${essayText}
               </div>
             </div>
