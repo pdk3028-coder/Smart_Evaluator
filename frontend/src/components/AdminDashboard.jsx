@@ -510,6 +510,8 @@ function AdminDashboard({ onLogout }) {
     const totalScore = data.total_score ?? 0;
     const maxScore = data.max_score;
     const signature = safePngDataUrl(data.signature_data);
+    const sentenceSegmenter = typeof Intl.Segmenter === 'function'
+      ? new Intl.Segmenter('ko', { granularity: 'sentence' }) : null;
 
     const objectiveHtml = objectiveQuestions.map((q, idx) => {
       const answers = data.answers.filter(a => a.question_id === q.question_id);
@@ -540,7 +542,13 @@ function AdminDashboard({ onLogout }) {
     const essayHtml = essayQuestions.map(q => {
       const answers = data.answers.filter(a => a.question_id === q.question_id);
       const essayText = answers.filter(ans => typeof ans.answer_text === 'string' && ans.answer_text.trim())
-        .map(ans => escapeHtml(ans.answer_text.replace(/\r\n?|\n/g, ' ').trim())).join('<br/><br/>');
+        .map(ans => {
+          const text = ans.answer_text.replace(/\r\n?|\n/g, ' ').trim();
+          const sentences = sentenceSegmenter
+            ? Array.from(sentenceSegmenter.segment(text), part => part.segment.trim()).filter(Boolean)
+            : [text];
+          return sentences.map(sentence => `<span class="essay-sentence">${escapeHtml(sentence)}</span>`).join(' ');
+        }).join('<br/><br/>');
       if (!essayText) return '';
       
       return `
@@ -650,6 +658,13 @@ function AdminDashboard({ onLogout }) {
           border-radius: 4px;
           padding: 10px;
           font-size: 12.5px;
+        }
+        .essay-sentence {
+          display: inline-block;
+          max-width: 100%;
+          vertical-align: top;
+          white-space: normal;
+          overflow-wrap: anywhere;
         }
         .sign-block {
           margin-top: 25px;
