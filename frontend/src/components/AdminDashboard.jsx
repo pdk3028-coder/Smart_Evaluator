@@ -521,7 +521,6 @@ function AdminDashboard({ onLogout }) {
           <td>
             <div class="q-main">${escapeHtml(q.category)}</div>
             <div class="q-sub">${escapeHtml(q.question_text)}</div>
-            ${q.question_sub_text ? `<div class="q-sub">${escapeHtml(q.question_sub_text)}</div>` : ''}
           </td>
           <td class="center-text font-bold">${scoreText}</td>
         </tr>
@@ -540,17 +539,17 @@ function AdminDashboard({ onLogout }) {
 
     const essayHtml = essayQuestions.map(q => {
       const answers = data.answers.filter(a => a.question_id === q.question_id);
-      const essayText = answers.map(ans => escapeHtml(ans.answer_text || '').replace(/\n/g, '<br/>')).join('<br/><br/>');
+      const essayText = answers.filter(ans => typeof ans.answer_text === 'string' && ans.answer_text.trim())
+        .map(ans => escapeHtml(ans.answer_text).replace(/\n/g, '<br/>')).join('<br/><br/>');
+      if (!essayText) return '';
       
       return `
         <tr class="essay-row">
           <td colspan="3" style="padding-top: 8px;">
             <div class="essay-box">
               <strong>[${escapeHtml(q.category)}]</strong><br/>
-              <div>${escapeHtml(q.question_text)}</div>
-              ${q.question_sub_text ? `<div>${escapeHtml(q.question_sub_text)}</div>` : ''}
               <div style="margin-top: 4px; line-height: 1.4; color: #1e293b;">
-                ${essayText || '<span style="color: #94a3b8; font-style: italic;">작성된 평가자 의견이 없습니다.</span>'}
+                ${essayText}
               </div>
             </div>
           </td>
