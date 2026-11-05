@@ -111,6 +111,81 @@ class EvaluationTests(unittest.TestCase):
         self.assertEqual(response.status_code,200)
         self.assertEqual(db.get_evaluation_results_for_export().to_json(),before)
 
+    def test_copy_type_creates_independent_active_questions_and_preserves_project(self):
+        original_questions = self.client.get(f'/api/evaluations/questions?assignment_id={self.assignment}').json
+        inactive_id = self.questions[-1]['id']
+        self.assertEqual(self.client.delete(f'/api/admin/questions/{inactive_id}', headers=HEADERS).status_code, 200)
+        source = self.client.get('/api/admin/questions').json
+        active = [q for q in source if q['evaluation_type'] == '동료사원 평가' and q['is_active']]
+        response = self.post('/admin/evaluation-types', {'name':'Copy', 'source_type':'동료사원 평가'})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json['copied_count'], len(active))
+        copied = [q for q in self.client.get('/api/admin/questions').json if q['evaluation_type'] == 'Copy']
+        self.assertEqual(len(copied), len(active))
+        self.assertTrue(set(q['id'] for q in copied).isdisjoint(q['id'] for q in source))
+        fields = ('category', 'question_text', 'question_sub_text', 'is_essay')
+        self.assertEqual([[q[k] for k in fields] for q in copied], [[q[k] for k in fields] for q in active])
+        changed = dict(copied[0], category='Edited copy', question_text='Edited copy wording')
+        self.assertEqual(self.client.put(f"/api/admin/questions/{copied[0]['id']}", json=changed, headers=HEADERS).status_code, 200)
+        source_after = [q for q in self.client.get('/api/admin/questions').json if q['id'] == active[0]['id']][0]
+        self.assertEqual(source_after['question_text'], active[0]['question_text'])
+        self.assertEqual(self.client.get(f'/api/evaluations/questions?assignment_id={self.assignment}').json, original_questions)
+
+    def test_new_type_copy_validation_is_atomic(self):
+        self.assertEqual(self.post('/admin/evaluation-types', {'name':'Empty'}).status_code, 200)
+        response = self.post('/admin/evaluation-types', {'name':'Bad copy', 'source_type':'does-not-exist'})
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(self.post('/admin/evaluation-types', {'name':'Empty', 'source_type':'동료사원 평가'}).status_code, 400)
+        types = self.client.get('/api/evaluation-types').json
+        self.assertIn('Empty', types)
+        self.assertNotIn('Bad copy', types)
+        self.assertFalse([q for q in self.client.get('/api/admin/questions').json if q['evaluation_type'] in ('Empty', 'Bad copy')])
+
+    def test_copy_failure_rolls_back_type_and_all_copied_questions(self):
+        before = self.client.get('/api/admin/questions').json
+        conn = sqlite3.connect(db.DB_PATH)
+        conn.execute("""CREATE TRIGGER fail_second_copy BEFORE INSERT ON evaluation_questions
+            WHEN NEW.evaluation_type = 'Rollback copy' AND EXISTS
+              (SELECT 1 FROM evaluation_questions WHERE evaluation_type = 'Rollback copy')
+            BEGIN SELECT RAISE(ABORT, 'simulated copy failure'); END""")
+        conn.commit()
+        conn.close()
+        response = self.post('/admin/evaluation-types', {'name':'Rollback copy', 'source_type':'동료사원 평가'})
+        self.assertEqual(response.status_code, 400)
+        self.assertNotIn('Rollback copy', self.client.get('/api/evaluation-types').json)
+        self.assertEqual(before, self.client.get('/api/admin/questions').json)
+
+    def test_question_fields_reject_invalid_payload_without_changing_templates(self):
+        before = self.client.get('/api/admin/questions').json
+        valid = {'question_text':'Valid', 'question_sub_text':'', 'category':'Title', 'is_essay':0, 'evaluation_type':'동료사원 평가'}
+        for key, value in [('question_text','  '), ('category',' '), ('is_essay',7), ('is_essay',True),
+                           ('evaluation_type','not-registered'), ('question_sub_text', 3)]:
+            with self.subTest(field=key, value=value):
+                response = self.post('/admin/questions', {**valid, key:value})
+                self.assertEqual(response.status_code, 400)
+        self.assertEqual(self.client.get('/api/admin/questions').json, before)
+
+    def test_reorder_retains_other_type_order_and_frozen_project(self):
+        self.assertEqual(self.post('/admin/evaluation-types', {'name':'Other'}).status_code, 200)
+        for text in ('Other one', 'Other two'):
+            self.assertEqual(self.post('/admin/questions', {'question_text':text, 'category':text,
+                'is_essay':0, 'evaluation_type':'Other'}).status_code, 200)
+        all_questions = self.client.get('/api/admin/questions').json
+        original = [q['id'] for q in all_questions if q['evaluation_type'] == '동료사원 평가']
+        other = [q['id'] for q in all_questions if q['evaluation_type'] == 'Other']
+        interleaved = [original[0], other[0], original[1], other[1], *original[2:]]
+        endpoint = '/api/admin/questions/reorder'
+        self.assertEqual(self.client.patch(endpoint, json={'question_ids':interleaved}, headers=HEADERS).status_code, 200)
+        rearranged = [original[1], other[0], original[0], other[1], *original[2:]]
+        self.assertEqual(self.client.patch(endpoint, json={'question_ids':rearranged}, headers=HEADERS).status_code, 200)
+        after = self.client.get('/api/admin/questions').json
+        self.assertEqual([q['id'] for q in after if q['evaluation_type'] == '동료사원 평가'], [original[1],original[0],*original[2:]])
+        self.assertEqual([q['id'] for q in after if q['evaluation_type'] == 'Other'], other)
+        self.assertEqual(self.client.get(f'/api/evaluations/questions?assignment_id={self.assignment}').json, self.questions)
+        self.assertEqual(self.client.patch(endpoint, json={'question_ids':rearranged[:-1]}, headers=HEADERS).status_code, 409)
+        self.assertEqual(self.client.patch(endpoint, json={'question_ids':rearranged+[rearranged[0]]}, headers=HEADERS).status_code, 400)
+        self.assertEqual(self.client.get('/api/admin/questions').json, after)
+
     def test_phone_is_returned_and_omitted_phone_is_preserved(self):
         employee = self.client.get('/api/admin/employees').json[0]
         self.assertEqual(employee['phone'],'01012340000')

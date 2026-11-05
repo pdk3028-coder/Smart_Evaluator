@@ -62,25 +62,38 @@ def get_all_evaluation_types():
     conn.close()
     return [row['name'] for row in rows]
 
-def add_evaluation_type(name):
-    """신규 평가 종류를 추가합니다."""
-    if not name or not name.strip():
-        raise Exception("평가 종류 이름이 올바르지 않습니다.")
-    
+def add_evaluation_type(name, source_type=None):
+    """Create a type, optionally copying active templates with independent IDs."""
+    if not isinstance(name, str) or not name.strip():
+        raise ValueError("평가 종류 이름을 입력해 주세요.")
+    if source_type is not None and (not isinstance(source_type, str) or not source_type.strip()):
+        raise ValueError("복사할 평가 종류를 선택해 주세요.")
     name = name.strip()
+    source_type = source_type.strip() if source_type is not None else None
     conn = get_db_connection()
-    c = conn.cursor()
-    
-    # 중복 체크
-    exists = c.execute('SELECT id FROM evaluation_types WHERE name = ?', (name,)).fetchone()
-    if exists:
+    try:
+        conn.execute('BEGIN IMMEDIATE')
+        if conn.execute('SELECT id FROM evaluation_types WHERE name=?', (name,)).fetchone():
+            raise ValueError("이미 존재하는 평가 종류입니다.")
+        if source_type and not conn.execute('SELECT id FROM evaluation_types WHERE name=?', (source_type,)).fetchone():
+            raise ValueError("복사할 평가 종류를 찾을 수 없습니다.")
+        source_questions = conn.execute('''SELECT question_text,question_sub_text,category,is_essay
+            FROM evaluation_questions WHERE evaluation_type=? AND is_active=1 ORDER BY sort_order,id''',
+            (source_type,)).fetchall() if source_type else []
+        conn.execute('INSERT INTO evaluation_types (name) VALUES (?)', (name,))
+        max_order = conn.execute('SELECT COALESCE(MAX(sort_order),0) FROM evaluation_questions').fetchone()[0]
+        for index, question in enumerate(source_questions, 1):
+            conn.execute('''INSERT INTO evaluation_questions
+                (question_text,question_sub_text,category,is_essay,sort_order,is_active,evaluation_type)
+                VALUES (?,?,?,?,?,1,?)''', (question['question_text'], question['question_sub_text'],
+                question['category'], question['is_essay'], max_order + index, name))
+        conn.commit()
+        return len(source_questions)
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
         conn.close()
-        raise Exception("이미 존재하는 평가 종류입니다.")
-        
-    c.execute('INSERT INTO evaluation_types (name) VALUES (?)', (name,))
-    conn.commit()
-    conn.close()
-    return True
 
 def delete_evaluation_type(name):
     """평가 종류를 삭제합니다. 단, 해당 평가 종류를 사용 중인 프로젝트나 질문이 있으면 삭제할 수 없습니다."""
@@ -89,25 +102,20 @@ def delete_evaluation_type(name):
         
     name = name.strip()
     conn = get_db_connection()
-    c = conn.cursor()
-    
-    # 1. evaluation_projects 사용 여부 체크
-    proj_exists = c.execute('SELECT id FROM evaluation_projects WHERE evaluation_type = ?', (name,)).fetchone()
-    if proj_exists:
+    try:
+        conn.execute('BEGIN IMMEDIATE')
+        if conn.execute('SELECT id FROM evaluation_projects WHERE evaluation_type=?', (name,)).fetchone():
+            raise ValueError("해당 평가 종류를 사용하는 기존 평가 프로젝트가 존재하므로 삭제할 수 없습니다.")
+        if conn.execute('SELECT id FROM evaluation_questions WHERE evaluation_type=?', (name,)).fetchone():
+            raise ValueError("해당 평가 종류를 사용하는 등록된 평가 문항이 존재하므로 삭제할 수 없습니다.")
+        conn.execute('DELETE FROM evaluation_types WHERE name=?', (name,))
+        conn.commit()
+        return True
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
         conn.close()
-        raise Exception("해당 평가 종류를 사용하는 기존 평가 프로젝트가 존재하므로 삭제할 수 없습니다.")
-        
-    # 2. evaluation_questions 사용 여부 체크
-    q_exists = c.execute('SELECT id FROM evaluation_questions WHERE evaluation_type = ?', (name,)).fetchone()
-    if q_exists:
-        conn.close()
-        raise Exception("해당 평가 종류를 사용하는 등록된 평가 문항이 존재하므로 삭제할 수 없습니다.")
-        
-    # 삭제 수행
-    c.execute('DELETE FROM evaluation_types WHERE name = ?', (name,))
-    conn.commit()
-    conn.close()
-    return True
 
 def get_db_connection():
     """데이터베이스 커넥션을 생성하여 반환합니다."""

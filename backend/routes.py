@@ -124,8 +124,8 @@ def create_evaluation_type():
     if not name:
         return jsonify({"detail": "평가 종류 이름이 필요합니다."}), 400
     try:
-        db.add_evaluation_type(name)
-        return jsonify({"success": True, "message": "평가 종류가 추가되었습니다."})
+        copied_count = db.add_evaluation_type(name, data.get('source_type'))
+        return jsonify({"success": True, "message": "평가 종류가 추가되었습니다.", "copied_count": copied_count})
     except Exception as e:
         return jsonify({"detail": str(e)}), 400
 
@@ -650,22 +650,33 @@ def admin_get_questions():
     conn.close()
     return jsonify([dict(row) for row in rows])
 
+def validate_question_fields(data, conn):
+    """Validate the current template without changing any project snapshots."""
+    if not isinstance(data, dict):
+        raise ValueError('문항 정보를 확인해 주세요.')
+    title, text = data.get('category'), data.get('question_text')
+    subtext = data.get('question_sub_text', '')
+    if subtext is None:
+        subtext = ''
+    kind, evaluation_type = data.get('is_essay'), data.get('evaluation_type', '동료사원 평가')
+    if not isinstance(title, str) or not title.strip() or not isinstance(text, str) or not text.strip():
+        raise ValueError('문항 제목과 설명을 입력해 주세요.')
+    if not isinstance(subtext, str) or type(kind) is not int or kind not in (0, 1):
+        raise ValueError('문항 종류와 보조 설명을 확인해 주세요.')
+    if not isinstance(evaluation_type, str) or not conn.execute(
+            'SELECT id FROM evaluation_types WHERE name=?', (evaluation_type,)).fetchone():
+        raise ValueError('등록된 평가 종류를 선택해 주세요.')
+    return text.strip(), subtext.strip(), title.strip(), kind, evaluation_type
+
 @api_bp.route("/admin/questions", methods=["POST"])
 def admin_create_question():
     """관리자용: 새로운 평가 문항을 추가합니다."""
-    data = request.get_json() or {}
-    question_text = data.get("question_text")
-    question_sub_text = data.get("question_sub_text", "")
-    category = data.get("category")
-    is_essay = data.get("is_essay")
-    evaluation_type = data.get("evaluation_type", "동료사원 평가")
-
-    if not question_text or is_essay is None or not category:
-        return jsonify({"detail": "필수 데이터가 누락되었습니다."}), 400
-
+    data = request.get_json(silent=True)
     conn = db.get_db_connection()
     c = conn.cursor()
     try:
+        conn.execute('BEGIN IMMEDIATE')
+        question_text, question_sub_text, category, is_essay, evaluation_type = validate_question_fields(data, conn)
         # 기존 최댓값 sort_order 조회
         max_order_row = c.execute('SELECT MAX(sort_order) as max_order FROM evaluation_questions').fetchone()
         max_order = max_order_row['max_order'] if max_order_row and max_order_row['max_order'] else 0
@@ -673,9 +684,12 @@ def admin_create_question():
         c.execute('''
             INSERT INTO evaluation_questions (question_text, question_sub_text, category, is_essay, sort_order, is_active, evaluation_type)
             VALUES (?, ?, ?, ?, ?, 1, ?)
-        ''', (question_text.strip(), question_sub_text.strip() if question_sub_text else "", category.strip(), is_essay, max_order + 1, evaluation_type))
+        ''', (question_text, question_sub_text, category, is_essay, max_order + 1, evaluation_type))
         conn.commit()
         return jsonify({"success": True, "message": "새로운 평가 문항이 추가되었습니다."})
+    except ValueError as e:
+        conn.rollback()
+        return jsonify({"detail": str(e)}), 400
     except sqlite3.Error as e:
         conn.rollback()
         return jsonify({"detail": f"데이터베이스 오류: {str(e)}"}), 500
@@ -685,19 +699,12 @@ def admin_create_question():
 @api_bp.route("/admin/questions/<int:question_id>", methods=["PUT"])
 def admin_update_question(question_id):
     """관리자용: 특정 평가 문항을 수정합니다."""
-    data = request.get_json() or {}
-    question_text = data.get("question_text")
-    question_sub_text = data.get("question_sub_text", "")
-    category = data.get("category")
-    is_essay = data.get("is_essay")
-    evaluation_type = data.get("evaluation_type", "동료사원 평가")
-
-    if not question_text or is_essay is None or not category:
-        return jsonify({"detail": "필수 데이터가 누락되었습니다."}), 400
-
+    data = request.get_json(silent=True)
     conn = db.get_db_connection()
     c = conn.cursor()
     try:
+        conn.execute('BEGIN IMMEDIATE')
+        question_text, question_sub_text, category, is_essay, evaluation_type = validate_question_fields(data, conn)
         # 존재 여부 확인
         q = c.execute('SELECT id FROM evaluation_questions WHERE id = ?', (question_id,)).fetchone()
         if not q:
@@ -707,9 +714,12 @@ def admin_update_question(question_id):
             UPDATE evaluation_questions
             SET question_text = ?, question_sub_text = ?, category = ?, is_essay = ?, evaluation_type = ?
             WHERE id = ?
-        ''', (question_text.strip(), question_sub_text.strip() if question_sub_text else "", category.strip(), is_essay, evaluation_type, question_id))
+        ''', (question_text, question_sub_text, category, is_essay, evaluation_type, question_id))
         conn.commit()
         return jsonify({"success": True, "message": "평가 문항이 성공적으로 수정되었습니다."})
+    except ValueError as e:
+        conn.rollback()
+        return jsonify({"detail": str(e)}), 400
     except sqlite3.Error as e:
         conn.rollback()
         return jsonify({"detail": f"데이터베이스 오류: {str(e)}"}), 500
@@ -728,7 +738,7 @@ def admin_delete_question(question_id):
         if ans_exists or snapshot_exists:
             # 답변이 이미 존재하면 비활성화(Soft Delete) 처리
             c.execute('UPDATE evaluation_questions SET is_active = 0 WHERE id = ?', (question_id,))
-            msg = "해당 문항에 대한 기 제출된 답변이 존재하여, 안전을 위해 문항을 '비활성화' 처리하였습니다."
+            msg = "프로젝트 또는 평가 기록에 사용된 문항이어서 비활성화했습니다. 기존 기록은 유지됩니다."
         else:
             # 답변이 없으면 데이터베이스에서 Hard Delete
             c.execute('DELETE FROM evaluation_questions WHERE id = ?', (question_id,))
@@ -760,12 +770,21 @@ def admin_activate_question(question_id):
 @api_bp.route("/admin/questions/reorder", methods=["PATCH"])
 def admin_reorder_questions():
     """관리자용: 평가 문항들의 순서(sort_order)를 일괄 조정합니다."""
-    data = request.get_json() or {}
-    question_ids = data.get("question_ids") or []
+    data = request.get_json(silent=True)
+    question_ids = data.get('question_ids') if isinstance(data, dict) else None
+    if not isinstance(question_ids, list) or any(type(qid) is not int or qid < 1 for qid in question_ids):
+        return jsonify({"detail": "문항 순서가 올바르지 않습니다."}), 400
+    if len(set(question_ids)) != len(question_ids):
+        return jsonify({"detail": "중복된 문항이 있습니다. 목록을 새로고침해 주세요."}), 400
 
     conn = db.get_db_connection()
     c = conn.cursor()
     try:
+        conn.execute('BEGIN IMMEDIATE')
+        current_ids = {row['id'] for row in c.execute('SELECT id FROM evaluation_questions')}
+        if set(question_ids) != current_ids:
+            conn.rollback()
+            return jsonify({"detail": "문항 목록이 변경되었습니다. 새로고침 후 다시 시도해 주세요."}), 409
         for index, q_id in enumerate(question_ids):
             c.execute('''
                 UPDATE evaluation_questions
