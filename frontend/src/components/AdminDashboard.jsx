@@ -3,6 +3,7 @@ import { apiFetch, escapeHtml, safePngDataUrl } from '../api';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
 import { PDFDocument } from 'pdf-lib';
+import QuestionManager from './QuestionManager';
 
 function AdminDashboard({ onLogout }) {
   const [employees, setEmployees] = useState([]);
@@ -44,15 +45,6 @@ function AdminDashboard({ onLogout }) {
 
   // 평가 문항 관리 상태들
   const [questions, setQuestions] = useState([]);
-  const [questionText, setQuestionText] = useState('');
-  const [questionSubText, setQuestionSubText] = useState('');
-  const [questionCategory, setQuestionCategory] = useState('');
-  const [questionIsEssay, setQuestionIsEssay] = useState(0); // 0: 객관식, 1: 주관식
-  const [editingQuestionId, setEditingQuestionId] = useState(null);
-  const [editQuestionText, setEditQuestionText] = useState('');
-  const [editQuestionSubText, setEditQuestionSubText] = useState('');
-  const [editQuestionCategory, setEditQuestionCategory] = useState('');
-  const [editQuestionIsEssay, setEditQuestionIsEssay] = useState(0);
 
   // 투 트랙 배정 방식 선택 ('search': 직접 검색, 'excel': 엑셀 일괄 추가)
   const [activeTrack, setActiveTrack] = useState('search');
@@ -95,6 +87,7 @@ function AdminDashboard({ onLogout }) {
   const [assignmentError, setAssignmentError] = useState('');
   const [assignmentSuccess, setAssignmentSuccess] = useState('');
   const [loading, setLoading] = useState(true);
+  const [questionDataError, setQuestionDataError] = useState('');
   const [pdfLoading, setPdfLoading] = useState(false);
   const [pdfLoadingMsg, setPdfLoadingMsg] = useState('');
 
@@ -119,11 +112,6 @@ function AdminDashboard({ onLogout }) {
   const [startDate, setStartDate] = useState(getTodayStr());
   const [endDate, setEndDate] = useState(getWeekLaterStr());
   const [evaluationType, setEvaluationType] = useState('동료사원 평가');
-
-  // 평가 문항 추가 상태
-  const [questionEvaluationType, setQuestionEvaluationType] = useState('동료사원 평가');
-  const [editQuestionEvaluationType, setEditQuestionEvaluationType] = useState('동료사원 평가');
-  const [questionFilterType, setQuestionFilterType] = useState('전체');
 
   // 동적 평가 종류 상태
   const [evaluationTypes, setEvaluationTypes] = useState(['동료사원 평가', '직무능력 평가', '다면평가']);
@@ -274,8 +262,12 @@ function AdminDashboard({ onLogout }) {
       setEvaluationTypes(typeData);
       setRounds(roundData);
       setSelectedRoundId((previous) => previous || String(roundData[0]?.id || ''));
+      setQuestionDataError('');
+      return true;
     } catch (err) {
       console.error(err);
+      setQuestionDataError('평가 종류와 문항을 불러오지 못했습니다. 다시 시도해 주세요.');
+      return false;
     } finally {
       setLoading(false);
     }
@@ -1364,171 +1356,6 @@ function AdminDashboard({ onLogout }) {
         console.error('클립보드 복사 실패:', err);
         alert('전화번호 복사에 실패했습니다.');
       });
-  };
-
-  // 평가 문항 등록
-  const handleCreateQuestion = async (e) => {
-    e.preventDefault();
-    if (!questionText.trim() || !questionCategory.trim()) {
-      alert('문항 제목과 설명을 입력해 주세요.');
-      return;
-    }
-
-    try {
-      const response = await apiFetch('/api/admin/questions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          question_text: questionText,
-          question_sub_text: questionSubText,
-          category: questionCategory,
-          is_essay: parseInt(questionIsEssay, 10),
-          evaluation_type: questionEvaluationType
-        }),
-      });
-
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.detail || '문항 추가에 실패했습니다.');
-      }
-
-      alert(data.message);
-      setQuestionText('');
-      setQuestionSubText('');
-      setQuestionCategory('');
-      setQuestionIsEssay(0);
-      setQuestionEvaluationType(evaluationTypes[0] || '동료사원 평가');
-      fetchData();
-    } catch (err) {
-      alert(err.message);
-    }
-  };
-
-  // 평가 문항 수정 모드 진입
-  const handleStartEditQuestion = (q) => {
-    setEditingQuestionId(q.id);
-    setEditQuestionText(q.question_text);
-    setEditQuestionSubText(q.question_sub_text || '');
-    setEditQuestionCategory(q.category);
-    setEditQuestionIsEssay(q.is_essay);
-    setEditQuestionEvaluationType(q.evaluation_type || (evaluationTypes[0] || '동료사원 평가'));
-  };
-
-  // 평가 문항 수정 저장
-  const handleSaveQuestion = async (qId) => {
-    if (!editQuestionText.trim() || !editQuestionCategory.trim()) {
-      alert('문항 제목과 설명을 입력해 주세요.');
-      return;
-    }
-
-    try {
-      const response = await apiFetch(`/api/admin/questions/${qId}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          question_text: editQuestionText,
-          question_sub_text: editQuestionSubText,
-          category: editQuestionCategory,
-          is_essay: parseInt(editQuestionIsEssay, 10),
-          evaluation_type: editQuestionEvaluationType
-        }),
-      });
-
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.detail || '문항 수정에 실패했습니다.');
-      }
-
-      alert(data.message);
-      setEditingQuestionId(null);
-      fetchData();
-    } catch (err) {
-      alert(err.message);
-    }
-  };
-
-  // 평가 문항 삭제
-  const handleDeleteQuestion = async (qId) => {
-    if (!confirm('해당 평가 문항을 삭제하시겠습니까? 기 제출된 답변이 있는 문항은 비활성화 처리됩니다.')) {
-      return;
-    }
-
-    try {
-      const response = await apiFetch(`/api/admin/questions/${qId}`, {
-        method: 'DELETE'
-      });
-
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.detail || '문항 삭제에 실패했습니다.');
-      }
-
-      alert(data.message);
-      fetchData();
-    } catch (err) {
-      alert(err.message);
-    }
-  };
-
-  // 비활성화 문항 활성화
-  const handleActivateQuestion = async (qId) => {
-    try {
-      const response = await apiFetch(`/api/admin/questions/${qId}/activate`, {
-        method: 'PATCH'
-      });
-
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.detail || '문항 활성화에 실패했습니다.');
-      }
-
-      alert(data.message);
-      fetchData();
-    } catch (err) {
-      alert(err.message);
-    }
-  };
-
-  // 평가 문항 순서 변경 (위/아래 이동)
-  const handleMoveQuestion = async (index, direction) => {
-    const newQuestions = [...questions];
-    const targetIndex = direction === 'up' ? index - 1 : index + 1;
-
-    if (targetIndex < 0 || targetIndex >= newQuestions.length) {
-      return;
-    }
-
-    const temp = newQuestions[index];
-    newQuestions[index] = newQuestions[targetIndex];
-    newQuestions[targetIndex] = temp;
-
-    setQuestions(newQuestions);
-
-    const questionIds = newQuestions.map(q => q.id);
-    try {
-      const response = await apiFetch('/api/admin/questions/reorder', {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          question_ids: questionIds
-        })
-      });
-
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.detail || '순서 조정에 실패했습니다.');
-      }
-      fetchData();
-    } catch (err) {
-      alert(err.message);
-      fetchData();
-    }
   };
 
   return (
@@ -3050,328 +2877,8 @@ function AdminDashboard({ onLogout }) {
 
 
         {activeTab === 'questions' && (
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'minmax(360px, 400px) 1fr',
-            gap: '24px',
-            alignItems: 'start'
-          }}>
-            {/* 1. 신규 평가문항 추가 카드 */}
-            <div className="card" style={{ padding: '20px' }}>
-              <h3 style={{ fontSize: '16px', fontWeight: '700', color: 'var(--text-primary)', marginBottom: '16px', borderLeft: '4px solid var(--primary-color)', paddingLeft: '8px' }}>
-                신규 평가 문항 등록
-              </h3>
-              <form onSubmit={handleCreateQuestion} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                <div className="input-group">
-                  <label className="input-label" style={{ fontSize: '13px' }}>평가 종류</label>
-                  <select
-                    className="input-field"
-                    value={questionEvaluationType}
-                    onChange={(e) => setQuestionEvaluationType(e.target.value)}
-                    style={{ backgroundColor: 'var(--surface-color)', padding: '10px' }}
-                  >
-                    {evaluationTypes.map((t) => (
-                      <option key={t} value={t}>{t}</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="input-group">
-                  <label className="input-label" style={{ fontSize: '13px' }}>문항 제목</label>
-                  <input
-                    type="text"
-                    className="input-field"
-                    placeholder="예: 협업 능력, 직무 성과, 종합의견 등"
-                    value={questionCategory}
-                    onChange={(e) => setQuestionCategory(e.target.value)}
-                    required
-                  />
-                </div>
-                <div className="input-group">
-                  <label className="input-label" style={{ fontSize: '13px' }}>문항 종류</label>
-                  <select
-                    className="input-field"
-                    value={questionIsEssay}
-                    onChange={(e) => setQuestionIsEssay(parseInt(e.target.value, 10))}
-                    style={{ backgroundColor: 'var(--surface-color)', padding: '10px' }}
-                  >
-                    <option value={0}>객관식 (5점 척도)</option>
-                    <option value={1}>주관식 (서술형 답변)</option>
-                  </select>
-                </div>
-                <div className="input-group">
-                  <label className="input-label" style={{ fontSize: '13px' }}>문항 설명 (주 설명)</label>
-                  <textarea
-                    className="input-field"
-                    rows="3"
-                    placeholder="임직원이 동료를 평가할 때 참고할 주 설명 문구를 입력하세요."
-                    value={questionText}
-                    onChange={(e) => setQuestionText(e.target.value)}
-                    style={{ resize: 'vertical', fontSize: '13px', lineHeight: '1.4' }}
-                    required
-                  />
-                </div>
-                <div className="input-group">
-                  <label className="input-label" style={{ fontSize: '13px' }}>보조 설명 (선택)</label>
-                  <textarea
-                    className="input-field"
-                    rows="2"
-                    placeholder="폰트가 작게 표시되어 강조를 덜고자 하는 보조 상세 설명이나 예시를 입력하세요."
-                    value={questionSubText}
-                    onChange={(e) => setQuestionSubText(e.target.value)}
-                    style={{ resize: 'vertical', fontSize: '13px', lineHeight: '1.4' }}
-                  />
-                </div>
-                <button className="btn btn-primary" type="submit" style={{ padding: '10px', fontSize: '14px' }}>
-                  문항 추가 등록
-                </button>
-              </form>
-            </div>
-
-            {/* 2. 기존 평가 문항 설정 및 편집 카드 */}
-            <div className="card" style={{ padding: '20px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
-                <h3 style={{ fontSize: '16px', fontWeight: '700', color: 'var(--text-primary)', borderLeft: '4px solid var(--success)', paddingLeft: '8px', margin: 0 }}>
-                  현재 평가 문항 목록
-                </h3>
-                {/* 평가 종류 분류 필터 */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span style={{ fontSize: '13px', color: 'var(--text-secondary)', fontWeight: '600' }}>평가 종류 필터:</span>
-                  <select
-                    className="input-field"
-                    value={questionFilterType}
-                    onChange={(e) => setQuestionFilterType(e.target.value)}
-                    style={{ padding: '6px 12px', fontSize: '13px', width: 'auto', backgroundColor: '#ffffff' }}
-                  >
-                    <option value="전체">전체 보기</option>
-                    {evaluationTypes.map((t) => (
-                      <option key={t} value={t}>{t}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-              
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-                  <thead>
-                    <tr style={{ borderBottom: '2px solid var(--border-color)', textAlign: 'left', backgroundColor: '#f8fafc' }}>
-                      <th style={{ padding: '10px', width: '70px', color: 'var(--text-secondary)', textAlign: 'center' }}>순서</th>
-                      <th style={{ padding: '10px', width: '110px', color: 'var(--text-secondary)' }}>평가 종류</th>
-                      <th style={{ padding: '10px', width: '90px', color: 'var(--text-secondary)' }}>문항 제목</th>
-                      <th style={{ padding: '10px', width: '90px', color: 'var(--text-secondary)' }}>유형</th>
-                      <th style={{ padding: '10px', color: 'var(--text-secondary)' }}>문항 설명</th>
-                      <th style={{ padding: '10px', width: '80px', color: 'var(--text-secondary)', textAlign: 'center' }}>상태</th>
-                      <th style={{ padding: '10px', width: '120px', color: 'var(--text-secondary)', textAlign: 'center' }}>작업</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(() => {
-                      const filteredList = questions.filter(q => {
-                        if (questionFilterType === '전체') return true;
-                        return (q.evaluation_type || '동료사원 평가') === questionFilterType;
-                      });
-
-                      if (filteredList.length === 0) {
-                        return (
-                          <tr>
-                            <td colSpan="7" style={{ padding: '30px', textAlign: 'center', color: 'var(--text-muted)' }}>
-                              해당 종류의 평가 문항이 없습니다.
-                            </td>
-                          </tr>
-                        );
-                      }
-
-                      return filteredList.map((q) => {
-                        const realIndex = questions.indexOf(q);
-                        const isEditing = editingQuestionId === q.id;
-                        return (
-                          <tr key={q.id} style={{ borderBottom: '1px solid var(--border-color)', opacity: q.is_active ? 1 : 0.6 }}>
-                            {isEditing ? (
-                              <>
-                                <td style={{ padding: '8px', textAlign: 'center' }}>-</td>
-                                <td style={{ padding: '8px 4px' }}>
-                                  <select
-                                    className="input-field"
-                                    value={editQuestionEvaluationType}
-                                    onChange={(e) => setEditQuestionEvaluationType(e.target.value)}
-                                    style={{ padding: '6px', fontSize: '12px', backgroundColor: '#fff' }}
-                                  >
-                                    {evaluationTypes.map((t) => (
-                                      <option key={t} value={t}>{t}</option>
-                                    ))}
-                                  </select>
-                                </td>
-                                <td style={{ padding: '8px 4px' }}>
-                                  <input
-                                    type="text"
-                                    className="input-field"
-                                    value={editQuestionCategory}
-                                    onChange={(e) => setEditQuestionCategory(e.target.value)}
-                                    style={{ padding: '6px', fontSize: '12px' }}
-                                  />
-                                </td>
-                                <td style={{ padding: '8px 4px' }}>
-                                  <select
-                                    className="input-field"
-                                    value={editQuestionIsEssay}
-                                    onChange={(e) => setEditQuestionIsEssay(parseInt(e.target.value, 10))}
-                                    style={{ padding: '6px', fontSize: '12px', backgroundColor: '#fff' }}
-                                  >
-                                    <option value={0}>객관식</option>
-                                    <option value={1}>주관식</option>
-                                  </select>
-                                </td>
-                                <td style={{ padding: '8px 4px' }}>
-                                  <textarea
-                                    className="input-field"
-                                    placeholder="주 설명"
-                                    value={editQuestionText}
-                                    onChange={(e) => setEditQuestionText(e.target.value)}
-                                    style={{ padding: '6px', fontSize: '12px', resize: 'vertical', width: '100%', minHeight: '40px', marginBottom: '4px' }}
-                                  />
-                                  <textarea
-                                    className="input-field"
-                                    placeholder="보조 설명"
-                                    value={editQuestionSubText}
-                                    onChange={(e) => setEditQuestionSubText(e.target.value)}
-                                    style={{ padding: '6px', fontSize: '11px', resize: 'vertical', width: '100%', minHeight: '30px' }}
-                                  />
-                                </td>
-                                <td style={{ padding: '8px', textAlign: 'center' }}>
-                                  <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>수정 중</span>
-                                </td>
-                                <td style={{ padding: '8px', textAlign: 'center' }}>
-                                  <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
-                                    <button
-                                      onClick={() => handleSaveQuestion(q.id)}
-                                      style={{ border: 'none', backgroundColor: '#10b981', color: '#fff', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px' }}
-                                    >
-                                      저장
-                                    </button>
-                                    <button
-                                      onClick={() => setEditingQuestionId(null)}
-                                      style={{ border: '1px solid var(--border-color)', backgroundColor: '#fff', color: 'var(--text-secondary)', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px' }}
-                                    >
-                                      취소
-                                    </button>
-                                  </div>
-                                </td>
-                              </>
-                            ) : (
-                              <>
-                                <td style={{ padding: '8px', textAlign: 'center' }}>
-                                  <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
-                                    <button
-                                      type="button"
-                                      onClick={() => handleMoveQuestion(realIndex, 'up')}
-                                      disabled={realIndex === 0}
-                                      style={{
-                                        border: '1px solid var(--border-color)',
-                                        backgroundColor: '#ffffff',
-                                        color: realIndex === 0 ? '#cbd5e1' : 'var(--text-primary)',
-                                        padding: '2px 6px',
-                                        borderRadius: '4px',
-                                        cursor: realIndex === 0 ? 'not-allowed' : 'pointer',
-                                        fontSize: '11px',
-                                        fontWeight: 'bold'
-                                      }}
-                                    >
-                                      ↑
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => handleMoveQuestion(realIndex, 'down')}
-                                      disabled={realIndex === questions.length - 1}
-                                      style={{
-                                        border: '1px solid var(--border-color)',
-                                        backgroundColor: '#ffffff',
-                                        color: realIndex === questions.length - 1 ? '#cbd5e1' : 'var(--text-primary)',
-                                        padding: '2px 6px',
-                                        borderRadius: '4px',
-                                        cursor: realIndex === questions.length - 1 ? 'not-allowed' : 'pointer',
-                                        fontSize: '11px',
-                                        fontWeight: 'bold'
-                                      }}
-                                    >
-                                      ↓
-                                    </button>
-                                  </div>
-                                </td>
-                                <td style={{ padding: '12px 10px', fontWeight: '700', color: 'var(--primary-color)' }}>{q.evaluation_type || '동료사원 평가'}</td>
-                                <td style={{ padding: '12px 10px', fontWeight: '600' }}>{q.category}</td>
-                                <td style={{ padding: '12px 10px' }}>
-                                  <span style={{
-                                    padding: '2px 6px',
-                                    borderRadius: '10px',
-                                    fontSize: '11px',
-                                    fontWeight: 'bold',
-                                    backgroundColor: q.is_essay ? '#fff3cd' : '#e2e3e5',
-                                    color: q.is_essay ? '#856404' : '#383d41'
-                                  }}>
-                                    {q.is_essay ? '주관식' : '객관식'}
-                                  </span>
-                                </td>
-                                <td style={{ padding: '12px 10px', lineHeight: '1.4' }}>
-                                  <div style={{ whiteSpace: 'pre-wrap', fontWeight: '500' }}>{q.question_text}</div>
-                                  {q.question_sub_text && (
-                                    <div style={{
-                                      fontSize: '11px',
-                                      color: '#64748b',
-                                      marginTop: '4px',
-                                      whiteSpace: 'pre-wrap',
-                                      lineHeight: '1.4'
-                                    }}>
-                                      {q.question_sub_text}
-                                    </div>
-                                  )}
-                                </td>
-                                <td style={{ padding: '12px 10px', textAlign: 'center' }}>
-                                  <span style={{
-                                    fontSize: '11px',
-                                    fontWeight: '700',
-                                    color: q.is_active ? '#065f46' : '#991b1b',
-                                    backgroundColor: q.is_active ? '#d1fae5' : '#fee2e2',
-                                    padding: '2px 6px',
-                                    borderRadius: '8px'
-                                  }}>
-                                    {q.is_active ? '사용중' : '비활성'}
-                                  </span>
-                                </td>
-                                <td style={{ padding: '12px 10px', textAlign: 'center' }}>
-                                  <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
-                                    <button
-                                      onClick={() => handleStartEditQuestion(q)}
-                                      style={{ border: 'none', backgroundColor: 'var(--primary-light)', color: 'var(--primary-color)', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: '600' }}
-                                    >
-                                      수정
-                                    </button>
-                                    {q.is_active ? (
-                                      <button
-                                        onClick={() => handleDeleteQuestion(q.id)}
-                                        style={{ border: 'none', backgroundColor: '#fee2e2', color: 'var(--danger)', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: '600' }}
-                                      >
-                                        삭제
-                                      </button>
-                                    ) : (
-                                      <button
-                                        onClick={() => handleActivateQuestion(q.id)}
-                                        style={{ border: 'none', backgroundColor: '#e0f2fe', color: '#0369a1', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: '600' }}
-                                      >
-                                        복구
-                                      </button>
-                                    )}
-                                  </div>
-                                </td>
-                              </>
-                            )}
-                          </tr>
-                        );
-                      });
-                    })()}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
+          <QuestionManager questions={questions} evaluationTypes={evaluationTypes} onRefresh={fetchData}
+            loading={loading} dataError={questionDataError} />
         )}
       </div>
       {pdfLoading && (
