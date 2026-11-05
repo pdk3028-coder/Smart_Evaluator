@@ -4,6 +4,7 @@ import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
 import { PDFDocument } from 'pdf-lib';
 import QuestionManager from './QuestionManager';
+import './ProjectManager.css';
 
 function AdminDashboard({ onLogout }) {
   const [employees, setEmployees] = useState([]);
@@ -36,6 +37,15 @@ function AdminDashboard({ onLogout }) {
 
   // 관리자 탭 전환 상태 ('employees': 사원명부 관리, 'projects': 프로젝트 관리, 'questions': 문항 관리)
   const [activeTab, setActiveTab] = useState('projects');
+  const [projectDialog, setProjectDialog] = useState('');
+  useEffect(() => {
+    if (!projectDialog) return undefined;
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') setProjectDialog('');
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [projectDialog]);
 
   // 신규 실시간 필터 및 자동완성 검색용 상태값들 추가
   const [employeeSearchText, setEmployeeSearchText] = useState('');
@@ -115,9 +125,6 @@ function AdminDashboard({ onLogout }) {
 
   // 동적 평가 종류 상태
   const [evaluationTypes, setEvaluationTypes] = useState(['동료사원 평가', '직무능력 평가', '다면평가']);
-  const [newEvalTypeName, setNewEvalTypeName] = useState('');
-  const [evalTypeSuccess, setEvalTypeSuccess] = useState('');
-  const [evalTypeError, setEvalTypeError] = useState('');
 
   // 인라인 기간 수정 관련 상태 및 함수
   const [editingProjectId, setEditingProjectId] = useState(null);
@@ -913,78 +920,13 @@ function AdminDashboard({ onLogout }) {
       }
 
       setProjCreateSuccess(data.message);
+      setProjectDialog('');
       setProjectEvaluateeId('');
       setEvaluateeSearchText('');
       setEvaluationType(evaluationTypes[0] || '동료사원 평가');
       fetchData();
     } catch (err) {
       setProjCreateError(err.message);
-    }
-  };
-
-  // 평가 종류 추가 핸들러
-  const handleAddEvalType = async (e) => {
-    e.preventDefault();
-    setEvalTypeError('');
-    setEvalTypeSuccess('');
-
-    if (!newEvalTypeName || !newEvalTypeName.trim()) {
-      setEvalTypeError('평가 종류 이름을 입력해 주세요.');
-      return;
-    }
-
-    try {
-      const response = await apiFetch('/api/admin/evaluation-types', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          name: newEvalTypeName.trim()
-        }),
-      });
-
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.detail || '평가 종류 추가에 실패했습니다.');
-      }
-
-      setEvalTypeSuccess(data.message || '평가 종류가 추가되었습니다.');
-      setNewEvalTypeName('');
-      fetchData();
-    } catch (err) {
-      setEvalTypeError(err.message);
-    }
-  };
-
-  // 평가 종류 삭제 핸들러
-  const handleDeleteEvalType = async (name) => {
-    if (!window.confirm(`'${name}' 평가 종류를 정말 삭제하시겠습니까?\n주의: 기존에 이 종류로 생성된 프로젝트나 문항이 있으면 삭제할 수 없습니다.`)) {
-      return;
-    }
-    setEvalTypeError('');
-    setEvalTypeSuccess('');
-
-    try {
-      const response = await apiFetch('/api/admin/evaluation-types', {
-        method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          name: name
-        }),
-      });
-
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.detail || '평가 종류 삭제에 실패했습니다.');
-      }
-
-      setEvalTypeSuccess(data.message || '평가 종류가 삭제되었습니다.');
-      fetchData();
-    } catch (err) {
-      setEvalTypeError(err.message);
     }
   };
 
@@ -1079,7 +1021,6 @@ function AdminDashboard({ onLogout }) {
 
     const currentProj = projects.find(p => p.project_id === parseInt(selectedProjectId, 10));
     const evaluateeId = currentProj ? currentProj.evaluatee_id : null;
-    const evaluateeTeam = currentProj ? currentProj.evaluatee_team : '';
 
     // 줄바꿈, 쉼표, 세미콜론, 탭 등으로 문자열 분할 후 공백 제거
     const names = excelPasteText
@@ -1125,61 +1066,23 @@ function AdminDashboard({ onLogout }) {
         };
       }
 
-      // 4. 다중 매칭 (동명이인 발생) -> 피평가자 부서(team_name) 기반 매핑
-      // 피평가자 부서와 정확히 일치하거나 서로를 포함하는 경우
-      const exactTeamMatched = candidates.filter(
-        emp => emp.team_name && evaluateeTeam && emp.team_name === evaluateeTeam
-      );
-      
-      const partialTeamMatched = candidates.filter(
-        emp => emp.team_name && evaluateeTeam && 
-               (emp.team_name.includes(evaluateeTeam) || evaluateeTeam.includes(emp.team_name))
-      );
-
-      let selectedCandidate = candidates[0];
-      let status = 'duplicate';
-
-      if (exactTeamMatched.length === 1) {
-        selectedCandidate = exactTeamMatched[0];
-        status = 'success'; // 부서 정확 일치 시 자동 매핑 성공 처리
-      } else if (partialTeamMatched.length === 1) {
-        selectedCandidate = partialTeamMatched[0];
-        status = 'success'; // 부서 부분 일치 시 자동 매핑 성공 처리
-      }
-
-      const alreadyAssigned = assignments.some(
-        (a) => a.project_id === parseInt(selectedProjectId, 10) && a.evaluator_id === selectedCandidate.id
-      );
-
-      return {
-        inputName,
-        matchedEmp: selectedCandidate,
-        status: alreadyAssigned ? 'already_assigned' : status,
-        candidates: candidates
-      };
+      // 동명이인은 후보를 자동 확정하지 않고 담당자가 명시적으로 선택합니다.
+      return { inputName, matchedEmp: null, status: 'duplicate', candidates };
     });
 
     setMappingPreview(previews);
   };
 
   // 엑셀 붙여넣기 트랙: 동명이인 수동 선택 변경 처리
-  const handleResolveDuplicate = (inputName, targetId) => {
-    setMappingPreview((prev) => 
-      prev.map((p) => {
-        if (p.inputName === inputName) {
-          const newMatched = p.candidates.find((c) => c.id === targetId);
-          const alreadyAssigned = assignments.some(
-            (a) => a.project_id === parseInt(selectedProjectId, 10) && a.evaluator_id === targetId
-          );
-          return {
-            ...p,
-            matchedEmp: newMatched,
-            status: alreadyAssigned ? 'already_assigned' : 'success'
-          };
-        }
-        return p;
-      })
-    );
+  const handleResolveDuplicate = (rowIndex, targetId) => {
+    setMappingPreview((prev) => prev.map((p, index) => {
+      if (index !== rowIndex) return p;
+      const matchedEmp = p.candidates.find((candidate) => candidate.id === targetId) || null;
+      const alreadyAssigned = matchedEmp && assignments.some(
+        (assignment) => assignment.project_id === Number(selectedProjectId) && assignment.evaluator_id === targetId
+      );
+      return { ...p, matchedEmp, status: matchedEmp ? (alreadyAssigned ? 'already_assigned' : 'success') : 'duplicate' };
+    }));
   };
 
   // 엑셀 붙여넣기 트랙: 일괄 배정 제출
@@ -1188,14 +1091,21 @@ function AdminDashboard({ onLogout }) {
     setAssignmentError('');
     setAssignmentSuccess('');
 
-    // 유효하게 매핑이 성공했거나 동명이인 상태의 사원 ID 추출
-    const validPreviews = mappingPreview.filter(p => p.status === 'success' || p.status === 'duplicate');
+    if (mappingPreview.some((p) => p.status === 'duplicate')) {
+      setAssignmentError('동명이인 항목을 모두 직접 선택해 주세요.');
+      return;
+    }
+    const validPreviews = mappingPreview.filter((p) => p.status === 'success' && p.matchedEmp);
     if (validPreviews.length === 0) {
       setAssignmentError('배정할 수 있는 유효한 사원이 없습니다.');
       return;
     }
 
-    const evaluatorIds = validPreviews.map(p => p.matchedEmp.id);
+    const evaluatorIds = validPreviews.map((p) => p.matchedEmp.id);
+    if (new Set(evaluatorIds).size !== evaluatorIds.length) {
+      setAssignmentError('같은 평가자가 여러 번 선택되었습니다. 목록을 확인해 주세요.');
+      return;
+    }
 
     try {
       const response = await apiFetch('/api/admin/assignments/bulk', {
@@ -1225,7 +1135,7 @@ function AdminDashboard({ onLogout }) {
 
   // 프로젝트 삭제
   const handleDeleteProject = async (projId) => {
-    if (!confirm('해당 평가 프로젝트를 삭제하시겠습니까? 삭제 시 하위 배정 및 제출된 평가가 모두 영구 삭제됩니다.')) {
+    if (!confirm('해당 프로젝트와 평가 기록이 없는 배정을 삭제하시겠습니까? 평가 기록이 있으면 삭제할 수 없습니다.')) {
       return;
     }
 
@@ -1697,20 +1607,22 @@ function AdminDashboard({ onLogout }) {
 
         {/* === 평가 프로젝트 관리 탭 === */}
         {activeTab === 'projects' && (
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'minmax(400px, 460px) 1fr',
-            gap: '24px',
-            alignItems: 'start'
-          }}>
-            
-            {/* 좌측 영역 (설정 및 배정 제어 영역) */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-              
-              {/* 1. 동료평가 프로젝트 생성 */}
-              <div className="card" style={{ padding: '20px' }}>
+          <div className="pm">
+            <div className="pm-heading">
+              <div><h2>평가 프로젝트 관리</h2><p>회차별 프로젝트와 평가 진행 현황을 확인하세요.</p></div>
+              <div className="pm-heading-actions">
+                <button type="button" className="pm-link" onClick={() => setActiveTab('questions')}>평가 종류·문항 설정</button>
+                <button type="button" className="btn btn-primary pm-primary" onClick={() => { setProjCreateError(''); setProjCreateSuccess(''); setProjectDialog('create'); }}>+ 프로젝트 만들기</button>
+              </div>
+            </div>
+            {projCreateSuccess && <div className="alert alert-success pm-notice" role="status">{projCreateSuccess}</div>}
+            {projectDialog === 'create' && <div className="pm-overlay" role="presentation">
+              <div className="pm-dialog card" role="dialog" aria-modal="true" aria-labelledby="pm-create-title">
+                <button type="button" className="pm-close" aria-label="닫기" onClick={() => setProjectDialog('')}>×</button>
+              {/* 프로젝트 생성 */}
+              <div>
                 <h3 style={{ fontSize: '16px', fontWeight: '700', color: 'var(--text-primary)', marginBottom: '14px', borderLeft: '4px solid var(--primary-color)', paddingLeft: '8px' }}>
-                  동료평가 프로젝트 생성
+                  <span id="pm-create-title">평가 프로젝트 만들기</span>
                 </h3>
 
                 {projCreateSuccess && (
@@ -1874,86 +1786,14 @@ function AdminDashboard({ onLogout }) {
                 </form>
               </div>
 
-              {/* 1-2. 평가 종류 관리 */}
-              <div className="card" style={{ padding: '20px' }}>
-                <h3 style={{ fontSize: '16px', fontWeight: '700', color: 'var(--text-primary)', marginBottom: '14px', borderLeft: '4px solid var(--primary-color)', paddingLeft: '8px' }}>
-                  평가 종류 관리
-                </h3>
-
-                {evalTypeSuccess && (
-                  <div className="alert alert-success" style={{ marginBottom: '12px' }}>
-                    <span>{evalTypeSuccess}</span>
-                  </div>
-                )}
-                {evalTypeError && (
-                  <div className="alert alert-error" style={{ marginBottom: '12px' }}>
-                    <span>{evalTypeError}</span>
-                  </div>
-                )}
-
-                <form onSubmit={handleAddEvalType} style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
-                  <input
-                    type="text"
-                    className="input-field"
-                    placeholder="새 평가 종류 이름"
-                    value={newEvalTypeName}
-                    onChange={(e) => setNewEvalTypeName(e.target.value)}
-                    style={{ flex: 1, padding: '8px 10px', fontSize: '13px' }}
-                    required
-                  />
-                  <button
-                    type="submit"
-                    className="btn btn-primary"
-                    style={{ padding: '8px 16px', fontSize: '13px', whiteSpace: 'nowrap' }}
-                  >
-                    추가
-                  </button>
-                </form>
-
-                <div style={{
-                  maxHeight: '150px',
-                  overflowY: 'auto',
-                  border: '1px solid var(--border-color)',
-                  borderRadius: 'var(--radius-sm)',
-                  backgroundColor: '#f8fafc'
-                }}>
-                  {evaluationTypes.map((t) => (
-                    <div
-                      key={t}
-                      style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        padding: '8px 12px',
-                        borderBottom: '1px solid #e2e8f0',
-                        fontSize: '13px'
-                      }}
-                    >
-                      <span style={{ fontWeight: '500', color: 'var(--text-primary)' }}>{t}</span>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteEvalType(t)}
-                        style={{
-                          background: 'none',
-                          border: 'none',
-                          color: '#ef4444',
-                          cursor: 'pointer',
-                          fontSize: '12px',
-                          fontWeight: '600',
-                          padding: '2px 4px'
-                        }}
-                      >
-                        삭제
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
+            </div></div>}
+            {projectDialog === 'assign' && <div className="pm-overlay" role="presentation">
+              <div className="pm-dialog card" role="dialog" aria-modal="true" aria-labelledby="pm-assign-title">
+                <button type="button" className="pm-close" aria-label="닫기" onClick={() => setProjectDialog('')}>×</button>
               {/* 2. 평가 관계 배정 (투 트랙 운영) */}
               <div className="card" style={{ padding: '20px' }}>
                 <h3 style={{ fontSize: '16px', fontWeight: '700', color: 'var(--text-primary)', marginBottom: '14px', borderLeft: '4px solid var(--warning)', paddingLeft: '8px' }}>
-                  평가 프로젝트에 평가자 배정
+                  <span id="pm-assign-title">평가자 배정</span>
                 </h3>
 
                 {assignmentSuccess && (
@@ -2269,7 +2109,7 @@ function AdminDashboard({ onLogout }) {
                         rows="5"
                         placeholder="엑셀에서 복사한 이름들을 붙여넣으세요 (줄바꿈 등으로 구분)"
                         value={excelPasteText}
-                        onChange={(e) => setExcelPasteText(e.target.value)}
+                        onChange={(e) => { setExcelPasteText(e.target.value); setMappingPreview([]); }}
                         disabled={!selectedProjectId}
                         style={{ resize: 'vertical', fontSize: '13px', lineHeight: '1.4', fontFamily: 'monospace' }}
                       />
@@ -2280,13 +2120,13 @@ function AdminDashboard({ onLogout }) {
                       disabled={!selectedProjectId || !excelPasteText.trim()}
                       style={{ padding: '10px', fontSize: '14px' }}
                     >
-                      사원 매핑 확인 (동명이인 자동 판별)
+                      사원 매핑 확인
                     </button>
 
                     {/* 매핑 미리보기 영역 */}
                     {mappingPreview.length > 0 && (
                       <div style={{ marginTop: '10px' }}>
-                        <label className="input-label" style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>매핑 결과 미리보기 ({mappingPreview.filter(p => p.status === 'success' || p.status === 'duplicate').length}명 매핑됨)</label>
+                        <label className="input-label" style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>매핑 결과 미리보기 ({mappingPreview.filter(p => p.status === 'success').length}명 매핑됨)</label>
                         <div style={{
                           maxHeight: '200px',
                           overflowY: 'auto',
@@ -2315,19 +2155,19 @@ function AdminDashboard({ onLogout }) {
                                 
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                   {/* 성공 매핑 */}
-                                  {status === 'success' && matchedEmp && (
+                                  {status === 'success' && matchedEmp && candidates.length <= 1 && (
                                     <span style={{ color: '#059669', fontWeight: '500' }}>
                                       ✓ [{matchedEmp.team_name}] {matchedEmp.position} ({matchedEmp.emp_id})
                                     </span>
                                   )}
 
                                   {/* 동명이인 매핑 조율 */}
-                                  {status === 'duplicate' && matchedEmp && (
+                                  {candidates.length > 1 && (
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                                       <span style={{ color: '#d97706', fontWeight: 'bold', fontSize: '11px', marginRight: '4px' }}>동명이인:</span>
                                       <select
-                                        value={matchedEmp.id}
-                                        onChange={(e) => handleResolveDuplicate(inputName, parseInt(e.target.value, 10))}
+                                        value={matchedEmp?.id || ''}
+                                        onChange={(e) => handleResolveDuplicate(index, Number(e.target.value))}
                                         style={{
                                           padding: '2px 4px',
                                           fontSize: '11px',
@@ -2337,6 +2177,7 @@ function AdminDashboard({ onLogout }) {
                                           color: '#b45309'
                                         }}
                                       >
+                                        <option value="">사원을 선택해 주세요</option>
                                         {candidates.map(c => (
                                           <option key={c.id} value={c.id}>
                                             [{c.team_name || '부서없음'}] {c.name} {c.position} ({c.emp_id})
@@ -2375,25 +2216,27 @@ function AdminDashboard({ onLogout }) {
                         <button
                           className="btn btn-primary"
                           onClick={handleCreateAssignmentBulk}
+                          disabled={mappingPreview.some((p) => p.status === 'duplicate')}
                           style={{ padding: '10px', fontSize: '14px', marginTop: '10px' }}
                         >
                           엑셀 매핑 대상자 일괄 배정
                         </button>
+                        {mappingPreview.some((p) => p.status === 'duplicate') && <p className="pm-mapping-hint">동명이인 항목의 사원을 모두 선택해 주세요.</p>}
                       </div>
                     )}
                   </div>
                 )}
               </div>
 
-            </div>
+            </div></div>}
 
-            {/* 우측 영역 (배정 진행 현황 및 트리 영역) */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            {/* 프로젝트 목록 */}
+            <div className="pm-list">
               
               {/* 4. 현재 프로젝트 및 배정 현황 리스트 */}
               <div className="card" style={{ padding: '20px' }}>
                 <h4 style={{ fontSize: '16px', fontWeight: '800', color: 'var(--text-secondary)', marginBottom: '16px', borderLeft: '4px solid var(--success)', paddingLeft: '8px' }}>
-                  평가 프로젝트 및 배정 진행 현황 ({projects.length}개 프로젝트)
+                  프로젝트 목록 ({filteredProjects.length} / {projects.length}개)
                 </h4>
 
                 {/* 다이내믹 실시간 필터 및 검색 컨트롤 */}
@@ -2423,7 +2266,7 @@ function AdminDashboard({ onLogout }) {
                       onChange={(e) => setProjectStatusFilter(e.target.value)}
                       style={{ flex: 1, padding: '8px 10px', fontSize: '13px', backgroundColor: 'var(--surface-color)' }}
                     >
-                      <option value="all">전체 상태</option>
+                      <option value="all">전체 기간 상태</option>
                       <option value="active">진행 중</option>
                       <option value="pending">진행 대기</option>
                       <option value="expired">기간 만료</option>
@@ -2444,7 +2287,7 @@ function AdminDashboard({ onLogout }) {
                         justifyContent: 'center'
                       }}
                     >
-                      전체 결과 엑셀 다운로드
+                      전체 결과 엑셀 다운로드 (필터 무관)
                     </button>
                   </div>
                 )}
@@ -2455,7 +2298,7 @@ function AdminDashboard({ onLogout }) {
                   </div>
                 ) : projects.length === 0 ? (
                   <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
-                    생성된 평가 프로젝트가 없습니다. 왼쪽 폼에서 피평가자를 지정해 생성해 주세요.
+                    생성된 평가 프로젝트가 없습니다. 프로젝트 만들기를 눌러 시작하세요.
                   </div>
                 ) : filteredProjects.length === 0 ? (
                   <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
@@ -2508,6 +2351,15 @@ function AdminDashboard({ onLogout }) {
                           {/* 아코디언 헤더 바 (클릭으로 세부 설정 열기/닫기) */}
                           <div
                             onClick={() => toggleProjectExpand(proj.project_id)}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Enter' || event.key === ' ') {
+                                event.preventDefault();
+                                toggleProjectExpand(proj.project_id);
+                              }
+                            }}
+                            role="button"
+                            tabIndex={0}
+                            aria-expanded={isExpanded}
                             style={{
                               display: 'flex',
                               justifyContent: 'space-between',
@@ -2540,7 +2392,7 @@ function AdminDashboard({ onLogout }) {
                                 </span>
                               </div>
                               <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
-                                {proj.start_date && proj.end_date ? `${proj.start_date} ~ ${proj.end_date}` : '상시 진행'}
+                                {proj.round_name} · {proj.evaluation_type} · {proj.start_date && proj.end_date ? `${proj.start_date} ~ ${proj.end_date}` : '상시 진행'}
                               </span>
                             </div>
 
@@ -2679,6 +2531,13 @@ function AdminDashboard({ onLogout }) {
                                 </div>
 
                                 <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                  <button type="button" className="pm-assign-button" onClick={() => {
+                                    setSelectedProjectId(String(proj.project_id));
+                                    setProjectSearchTextForAssignment(`[${proj.evaluatee_team || '부서없음'}] ${proj.evaluatee_name} ${proj.evaluatee_position || ''} (${proj.round_name} · ${proj.evaluation_type})`);
+                                    setSelectedEvaluators([]); setExcelPasteText(''); setMappingPreview([]);
+                                    setEvaluatorSearchText(''); setAssignmentError(''); setAssignmentSuccess('');
+                                    setActiveTrack('search'); setProjectDialog('assign');
+                                  }}>+ 평가자 배정</button>
                                   <button
                                     onClick={() => handleCopyIncompleteEvaluatorPhones(proj.project_id)}
                                     style={{
@@ -2756,7 +2615,7 @@ function AdminDashboard({ onLogout }) {
 
                                 {projAssignments.length === 0 ? (
                                   <p style={{ fontSize: '12px', color: 'var(--text-muted)', fontStyle: 'italic', margin: '4px 0', textAlign: 'left' }}>
-                                    등록된 평가자가 없습니다. 왼쪽 배정 폼을 이용해 평가자를 배정해 주세요.
+                                    등록된 평가자가 없습니다. 평가자 배정 버튼을 눌러 추가하세요.
                                   </p>
                                 ) : (
                                   <div style={{
